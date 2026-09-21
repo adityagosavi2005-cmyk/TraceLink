@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { caseService } from '../services/api';
+import { caseService, photoService, sightingService } from '../services/api';
+import { PageHeader, SectionHeader, PhotoCard } from '../components/Workspace';
+import { CaseStatusBadge } from '../components/StatusBadge';
+import { Modal } from '../components/Modal';
+import { LoadingState, EmptyState, ErrorState } from '../components/StateBlocks';
 import './Cases.css';
 
 export const Cases = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   
   // Case listing state
   const [cases, setCases] = useState([]);
@@ -26,6 +32,10 @@ export const Cases = () => {
   // Create case form state
   const [createTitle, setCreateTitle] = useState('');
   const [createDescription, setCreateDescription] = useState('');
+  // Phase 0 structured fields (optional)
+  const [createFullName, setCreateFullName] = useState('');
+  const [createAgeYears, setCreateAgeYears] = useState('');
+  const [createLastSeenLocation, setCreateLastSeenLocation] = useState('');
   const [createError, setCreateError] = useState(null);
   const [createSuccess, setCreateSuccess] = useState(null);
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -40,9 +50,27 @@ export const Cases = () => {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editStatus, setEditStatus] = useState('');
+  const [editFullName, setEditFullName] = useState('');
+  const [editAgeYears, setEditAgeYears] = useState('');
+  const [editLastSeenLocation, setEditLastSeenLocation] = useState('');
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState(null);
   const [editSuccess, setEditSuccess] = useState(null);
+
+  // Phase 1 evidence photo state
+  const [photos, setPhotos] = useState([]);
+  const [photosLoading, setPhotosLoading] = useState(false);
+  const [photosError, setPhotosError] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const [deletingPhotoId, setDeletingPhotoId] = useState(null);
+  const [retryingPhotoId, setRetryingPhotoId] = useState(null);
+  const [detectingFaceId, setDetectingFaceId] = useState(null);
+
+  // Phase 2 sightings state (report list inside the case detail view)
+  const [caseSightings, setCaseSightings] = useState([]);
+  const [sightingsLoading, setSightingsLoading] = useState(false);
+  const [sightingsError, setSightingsError] = useState(null);
 
   const fetchCases = async () => {
     setLoading(true);
@@ -66,6 +94,143 @@ export const Cases = () => {
     fetchCases();
   }, []);
 
+  const fetchPhotos = async (caseId) => {
+    setPhotosLoading(true);
+    setPhotosError(null);
+    try {
+      const data = await photoService.listPhotos(caseId);
+      setPhotos(data);
+    } catch (err) {
+      console.error(`Error fetching photos for case ${caseId}:`, err);
+      if (err.response && err.response.status === 403) {
+        setPhotosError('You do not have permission to view evidence photos.');
+      } else {
+        setPhotosError('Failed to load evidence photos.');
+      }
+      setPhotos([]);
+    } finally {
+      setPhotosLoading(false);
+    }
+  };
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file || !detailCase) return;
+    setUploadError(null);
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setUploadError('Only JPEG, PNG, and WebP images are accepted.');
+      e.target.value = null;
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('Image exceeds the maximum allowed size (10 MB).');
+      e.target.value = null;
+      return;
+    }
+
+    setUploading(true);
+    try {
+      await photoService.uploadPhoto(detailCase.id, file);
+      await fetchPhotos(detailCase.id);
+    } catch (err) {
+      console.error('Error uploading photo:', err);
+      if (err.response && err.response.status === 403) {
+        setUploadError('You do not have permission to add photos to this case.');
+      } else if (err.response && err.response.status === 413) {
+        setUploadError('Image exceeds the maximum allowed size (10 MB).');
+      } else if (err.response && (err.response.status === 415 || err.response.status === 400)) {
+        setUploadError(err.response.data?.detail || 'Invalid image file.');
+      } else {
+        setUploadError('Failed to upload photo. Please try again.');
+      }
+    } finally {
+      setUploading(false);
+      e.target.value = null;
+    }
+  };
+
+  const handlePhotoDelete = async (photoId) => {
+    if (!detailCase) return;
+    if (!window.confirm('Delete this evidence photo? This cannot be undone.')) return;
+    setDeletingPhotoId(photoId);
+    setUploadError(null);
+    try {
+      await photoService.deletePhoto(detailCase.id, photoId);
+      await fetchPhotos(detailCase.id);
+    } catch (err) {
+      console.error('Error deleting photo:', err);
+      setUploadError('Failed to delete photo. Please try again.');
+    } finally {
+      setDeletingPhotoId(null);
+    }
+  };
+
+  const handlePhotoRetry = async (photoId) => {
+    if (!detailCase) return;
+    setRetryingPhotoId(photoId);
+    setUploadError(null);
+    try {
+      await photoService.retryPhoto(detailCase.id, photoId);
+      await fetchPhotos(detailCase.id);
+    } catch (err) {
+      console.error('Error retrying photo processing:', err);
+      if (err.response && err.response.status === 409) {
+        setUploadError('Photo is already being processed; try again later.');
+      } else if (err.response && err.response.status === 403) {
+        setUploadError('You do not have permission to process photos in this case.');
+      } else {
+        setUploadError('Failed to retry photo processing. Please try again.');
+      }
+    } finally {
+      setRetryingPhotoId(null);
+    }
+  };
+
+  const handleFaceDetect = async (photoId, redetect) => {
+    if (!detailCase) return;
+    setDetectingFaceId(photoId);
+    setUploadError(null);
+    try {
+      if (redetect) {
+        await photoService.redetectFaces(detailCase.id, photoId);
+      } else {
+        await photoService.detectFaces(detailCase.id, photoId);
+      }
+      await fetchPhotos(detailCase.id);
+    } catch (err) {
+      console.error('Error running face detection:', err);
+      if (err.response && err.response.status === 403) {
+        setUploadError('You do not have permission to run face detection.');
+      } else if (err.response && err.response.status === 409) {
+        setUploadError(err.response.data?.detail || 'Photo is not ready for face detection.');
+      } else {
+        setUploadError('Failed to run face detection. Please try again.');
+      }
+    } finally {
+      setDetectingFaceId(null);
+    }
+  };
+
+  const fetchCaseSightings = async (caseId) => {
+    setSightingsLoading(true);
+    setSightingsError(null);
+    try {
+      const data = await sightingService.listSightings(caseId);
+      setCaseSightings(data);
+    } catch (err) {
+      console.error(`Error fetching sightings for case ${caseId}:`, err);
+      if (err.response && err.response.status === 403) {
+        setSightingsError('You do not have permission to view sightings.');
+      } else {
+        setSightingsError('Failed to load sightings.');
+      }
+      setCaseSightings([]);
+    } finally {
+      setSightingsLoading(false);
+    }
+  };
+
   const handleViewDetails = async (caseId) => {
     setShowDetailModal(true);
     setIsEditing(false);
@@ -74,9 +239,16 @@ export const Cases = () => {
     setDetailLoading(true);
     setDetailError(null);
     setDetailCase(null);
+    setPhotos([]);
+    setPhotosError(null);
+    setUploadError(null);
+    setCaseSightings([]);
+    setSightingsError(null);
     try {
       const data = await caseService.getCase(caseId);
       setDetailCase(data);
+      fetchPhotos(caseId);
+      fetchCaseSightings(caseId);
     } catch (err) {
       console.error(`Error fetching case details for ID ${caseId}:`, err);
       if (err.response && err.response.status === 403) {
@@ -98,6 +270,9 @@ export const Cases = () => {
       setEditTitle(detailCase.title);
       setEditDescription(detailCase.description);
       setEditStatus(detailCase.status);
+      setEditFullName(detailCase.full_name || '');
+      setEditAgeYears(detailCase.age_years ?? '');
+      setEditLastSeenLocation(detailCase.last_seen_location || '');
       setEditError(null);
       setEditSuccess(null);
       setIsEditing(true);
@@ -120,12 +295,25 @@ export const Cases = () => {
       return;
     }
 
+    // Phase 0: optional age must be an integer in range when provided.
+    let parsedEditAge = null;
+    if (String(editAgeYears).trim() !== '') {
+      parsedEditAge = Number(editAgeYears);
+      if (!Number.isInteger(parsedEditAge) || parsedEditAge < 0 || parsedEditAge > 150) {
+        setEditError('Age must be a whole number between 0 and 150.');
+        return;
+      }
+    }
+
     setEditSubmitting(true);
     try {
       const updatedCase = await caseService.updateCase(detailCase.id, {
         title: editTitle.trim(),
         description: editDescription.trim(),
         status: editStatus,
+        full_name: editFullName.trim() ? editFullName.trim() : null,
+        age_years: parsedEditAge,
+        last_seen_location: editLastSeenLocation.trim() ? editLastSeenLocation.trim() : null,
       });
       setEditSuccess('Case updated successfully!');
       
@@ -179,15 +367,32 @@ export const Cases = () => {
       return;
     }
 
+    // Phase 0: optional age must be an integer in range when provided.
+    let parsedCreateAge;
+    if (String(createAgeYears).trim() !== '') {
+      parsedCreateAge = Number(createAgeYears);
+      if (!Number.isInteger(parsedCreateAge) || parsedCreateAge < 0 || parsedCreateAge > 150) {
+        setCreateError('Age must be a whole number between 0 and 150.');
+        return;
+      }
+    }
+
     setCreateSubmitting(true);
     try {
-      const newCase = await caseService.createCase({
+      const createPayload = {
         title: createTitle,
         description: createDescription,
-      });
+      };
+      if (createFullName.trim()) createPayload.full_name = createFullName.trim();
+      if (parsedCreateAge !== undefined) createPayload.age_years = parsedCreateAge;
+      if (createLastSeenLocation.trim()) createPayload.last_seen_location = createLastSeenLocation.trim();
+      const newCase = await caseService.createCase(createPayload);
       setCreateSuccess('Case registered successfully!');
       setCreateTitle('');
       setCreateDescription('');
+      setCreateFullName('');
+      setCreateAgeYears('');
+      setCreateLastSeenLocation('');
       
       // Refresh list
       await fetchCases();
@@ -278,20 +483,7 @@ export const Cases = () => {
     });
   };
 
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'OPEN':
-        return <span className="badge badge-org">Open</span>;
-      case 'UNDER_REVIEW':
-        return <span className="badge badge-reviewer">Under Review</span>;
-      case 'RESOLVED':
-        return <span className="badge badge-success">Resolved</span>;
-      case 'CLOSED':
-        return <span className="badge badge-reporter">Closed</span>;
-      default:
-        return <span className="badge">{status}</span>;
-    }
-  };
+
 
   const canCreateCase = user && ['REPORTER', 'ORGANIZATION_MEMBER', 'ADMIN'].includes(user.role);
 
@@ -305,8 +497,36 @@ export const Cases = () => {
     return matchesSearch && matchesStatus;
   });
 
+  const canModifyDetail = user && detailCase && (user.role === 'ADMIN' || detailCase.created_by === user.id);
+
+  // Narrow Phase 4 permission: ONLY admin and reviewer may trigger
+  // face detection. Case-edit permission (including case ownership)
+  // does not imply detection permission.
+  const canDetectFaces = user && detailCase && (
+    user.role === 'ADMIN' || user.role === 'REVIEWER'
+  );
+
   return (
     <div className="cases-page-container">
+      <PageHeader
+        title="Cases"
+        subtitle="Missing-person case files. Select a case to review evidence, sightings, and face-detection results."
+        actions={
+          canCreateCase ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setCreateError(null);
+                setCreateSuccess(null);
+                setShowCreateModal(true);
+              }}
+            >
+              Create case
+            </button>
+          ) : null
+        }
+      />
       {/* Top Controls Action Bar */}
       <div className="cases-actions-bar">
         <div className="search-filter-group">
@@ -316,12 +536,14 @@ export const Cases = () => {
             placeholder="Search by title or description..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            aria-label="Search cases"
             style={{ flex: 2 }}
           />
           <select
             className="form-control"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
+            aria-label="Filter cases by status"
             style={{ flex: 1, minWidth: '130px' }}
           >
             <option value="ALL">All Statuses</option>
@@ -331,54 +553,36 @@ export const Cases = () => {
             <option value="CLOSED">Closed</option>
           </select>
         </div>
-
-        {canCreateCase && (
-          <button 
-            className="btn btn-primary" 
-            onClick={() => {
-              setCreateError(null);
-              setCreateSuccess(null);
-              setShowCreateModal(true);
-            }}
-          >
-            ➕ Create Case
-          </button>
-        )}
+        <span className="text-muted" style={{ fontSize: '0.8rem' }} aria-live="polite">
+          {loading ? '…' : `${filteredCases.length} of ${cases.length} cases`}
+        </span>
       </div>
 
       {/* Main Cases Content */}
       {loading ? (
-        <div className="cases-state-container">
-          <span className="spinner" style={{ display: 'inline-block', marginBottom: '1rem' }} />
-          <h2 style={{ fontSize: '1.15rem' }}>Loading Case Profiles...</h2>
-          <p className="cases-state-text">Fetching data from the TraceLink central index.</p>
-        </div>
+        <LoadingState label="Loading cases…" />
       ) : error ? (
-        <div className="alert alert-error text-center" style={{ padding: '2rem' }}>
-          <h3>⚠️ System Index Unreachable</h3>
-          <p style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>{error}</p>
-          <button className="btn btn-secondary mt-4" onClick={fetchCases}>
-            Retry Connection
-          </button>
-        </div>
+        <ErrorState detail={error} onRetry={fetchCases} />
       ) : filteredCases.length === 0 ? (
-        <div className="cases-state-container">
-          <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>📁</div>
-          <h2 style={{ fontSize: '1.15rem' }}>No Cases Found</h2>
-          <p className="cases-state-text">
-            {searchTerm || statusFilter !== 'ALL'
-              ? 'No case profiles match your current search queries or filters.'
-              : 'There are no missing-person case profiles currently recorded.'}
-          </p>
-          {!searchTerm && statusFilter === 'ALL' && canCreateCase && (
-            <button
-              className="btn btn-primary mt-4"
-              onClick={() => setShowCreateModal(true)}
-            >
-              Register First Case
-            </button>
-          )}
-        </div>
+        <EmptyState
+          title="No cases found"
+          detail={
+            searchTerm || statusFilter !== 'ALL'
+              ? 'No cases match the current search or filters.'
+              : 'There are no missing-person cases currently recorded.'
+          }
+          action={
+            !searchTerm && statusFilter === 'ALL' && canCreateCase ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setShowCreateModal(true)}
+              >
+                Register first case
+              </button>
+            ) : null
+          }
+        />
       ) : (
         <div className="cases-table-container">
           <table className="cases-table">
@@ -413,13 +617,12 @@ export const Cases = () => {
                       {caseItem.description}
                     </div>
                   </td>
-                  <td>{getStatusBadge(caseItem.status)}</td>
+                  <td><CaseStatusBadge status={caseItem.status} /></td>
                   <td>{formatDate(caseItem.created_at)}</td>
                   <td>{formatDate(caseItem.updated_at)}</td>
                   <td style={{ textAlign: 'center' }}>
                     <button
-                      className="btn btn-secondary btn-block"
-                      style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}
+                      className="btn btn-primary btn-sm"
                       onClick={() => handleViewDetails(caseItem.id)}
                     >
                       View
@@ -434,20 +637,12 @@ export const Cases = () => {
 
       {/* CREATE CASE MODAL */}
       {showCreateModal && (
-        <div className="modal-overlay" onClick={() => !createSubmitting && setShowCreateModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Register New Case Profile</h2>
-              <button 
-                className="modal-close-btn" 
-                onClick={() => setShowCreateModal(false)}
-                disabled={createSubmitting}
-              >
-                &times;
-              </button>
-            </div>
+        <Modal
+          title="Register new case"
+          onClose={() => !createSubmitting && setShowCreateModal(false)}
+        >
             <form onSubmit={handleCreateSubmit}>
-              <div className="modal-body">
+              <div>
                 {createError && (
                   <div className="alert alert-error">
                     {createError}
@@ -487,6 +682,47 @@ export const Cases = () => {
                     required
                   />
                 </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="case-fullname">Missing Person&apos;s Full Name (optional)</label>
+                  <input
+                    id="case-fullname"
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Jane Doe"
+                    value={createFullName}
+                    onChange={(e) => setCreateFullName(e.target.value)}
+                    disabled={createSubmitting || !!createSuccess}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="case-age">Age in Years (optional)</label>
+                  <input
+                    id="case-age"
+                    type="number"
+                    className="form-control"
+                    placeholder="e.g. 29"
+                    min="0"
+                    max="150"
+                    value={createAgeYears}
+                    onChange={(e) => setCreateAgeYears(e.target.value)}
+                    disabled={createSubmitting || !!createSuccess}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="case-loc">Last Seen Location (optional)</label>
+                  <input
+                    id="case-loc"
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Central Station, Platform 2"
+                    value={createLastSeenLocation}
+                    onChange={(e) => setCreateLastSeenLocation(e.target.value)}
+                    disabled={createSubmitting || !!createSuccess}
+                  />
+                </div>
               </div>
               <div className="modal-footer">
                 <button
@@ -502,39 +738,24 @@ export const Cases = () => {
                   className="btn btn-primary"
                   disabled={createSubmitting || !!createSuccess}
                 >
-                  {createSubmitting ? 'Registering...' : 'Register Case'}
+                  {createSubmitting ? 'Registering…' : 'Register case'}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* VIEW DETAILS MODAL */}
       {showDetailModal && (
-        <div className="modal-overlay" onClick={() => !editSubmitting && !isEditing && setShowDetailModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{isEditing ? 'Edit Investigation Profile' : 'Case Investigation Profile'}</h2>
-              <button 
-                className="modal-close-btn" 
-                onClick={() => !editSubmitting && setShowDetailModal(false)}
-                disabled={editSubmitting}
-              >
-                &times;
-              </button>
-            </div>
-            <div className="modal-body">
+        <Modal
+          wide
+          title={isEditing ? 'Edit case' : `Case #${detailCase?.id || ''}`}
+          onClose={() => !editSubmitting && setShowDetailModal(false)}
+        >
               {detailLoading ? (
-                <div style={{ textAlign: 'center', padding: '2rem 0' }}>
-                  <span className="spinner" style={{ display: 'inline-block', marginBottom: '1rem' }} />
-                  <p className="cases-state-text">Loading case profile detail...</p>
-                </div>
+                <LoadingState label="Loading case detail…" />
               ) : detailError ? (
-                <div className="alert alert-error text-center" style={{ margin: 0 }}>
-                  <h4>Access Failure</h4>
-                  <p style={{ marginTop: '0.5rem', fontSize: '0.875rem' }}>{detailError}</p>
-                </div>
+                <ErrorState detail={detailError} />
               ) : detailCase ? (
                 isEditing ? (
                   <form onSubmit={handleUpdateSubmit}>
@@ -591,6 +812,44 @@ export const Cases = () => {
                         required
                       />
                     </div>
+
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="edit-fullname">Missing Person&apos;s Full Name (optional)</label>
+                      <input
+                        id="edit-fullname"
+                        type="text"
+                        className="form-control"
+                        value={editFullName}
+                        onChange={(e) => setEditFullName(e.target.value)}
+                        disabled={editSubmitting || !!editSuccess}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="edit-age">Age in Years (optional)</label>
+                      <input
+                        id="edit-age"
+                        type="number"
+                        className="form-control"
+                        min="0"
+                        max="150"
+                        value={editAgeYears}
+                        onChange={(e) => setEditAgeYears(e.target.value)}
+                        disabled={editSubmitting || !!editSuccess}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="edit-loc">Last Seen Location (optional)</label>
+                      <input
+                        id="edit-loc"
+                        type="text"
+                        className="form-control"
+                        value={editLastSeenLocation}
+                        onChange={(e) => setEditLastSeenLocation(e.target.value)}
+                        disabled={editSubmitting || !!editSuccess}
+                      />
+                    </div>
                   </form>
                 ) : (
                   <div className="detail-grid">
@@ -611,9 +870,36 @@ export const Cases = () => {
                     <div className="detail-row">
                       <span className="detail-label">Status State</span>
                       <span className="detail-value">
-                        {getStatusBadge(detailCase.status)}
+                        <CaseStatusBadge status={detailCase.status} />
                       </span>
                     </div>
+
+                    {detailCase.full_name && (
+                      <div className="detail-row">
+                        <span className="detail-label">Missing Person</span>
+                        <span className="detail-value" style={{ fontWeight: '600' }}>
+                          {detailCase.full_name}
+                        </span>
+                      </div>
+                    )}
+
+                    {(detailCase.age_years ?? null) !== null && (
+                      <div className="detail-row">
+                        <span className="detail-label">Age</span>
+                        <span className="detail-value">
+                          {detailCase.age_years} years
+                        </span>
+                      </div>
+                    )}
+
+                    {detailCase.last_seen_location && (
+                      <div className="detail-row">
+                        <span className="detail-label">Last Seen Location</span>
+                        <span className="detail-value">
+                          {detailCase.last_seen_location}
+                        </span>
+                      </div>
+                    )}
 
                     <div className="detail-row">
                       <span className="detail-label">Investigator ID</span>
@@ -642,89 +928,178 @@ export const Cases = () => {
                         {detailCase.description}
                       </div>
                     </div>
+
+                    <div className="evidence-section">
+                      <SectionHeader
+                        title="Evidence"
+                        meta={photosLoading ? '…' : `${photos.length} photo${photos.length === 1 ? '' : 's'}`}
+                      />
+                      {uploadError && (
+                        <div className="alert alert-error" role="alert">
+                          {uploadError}
+                        </div>
+                      )}
+                      {photosLoading ? (
+                        <LoadingState label="Loading evidence photos…" />
+                      ) : photosError ? (
+                        <ErrorState detail={photosError} onRetry={() => fetchPhotos(detailCase.id)} />
+                      ) : photos.length === 0 ? (
+                        <EmptyState
+                          title="No evidence photos"
+                          detail={canModifyDetail ? 'Upload the first evidence photo below.' : null}
+                        />
+                      ) : (
+                        <div className="photo-grid">
+                          {photos.map((photo) => (
+                            <PhotoCard
+                              key={photo.id}
+                              photo={photo}
+                              alt={`Case evidence photo ${photo.id}`}
+                              canDelete={canModifyDetail}
+                              onDelete={handlePhotoDelete}
+                              deleting={deletingPhotoId === photo.id}
+                              busy={uploading}
+                              canDetect={canDetectFaces}
+                              detecting={detectingFaceId === photo.id}
+                              onDetect={(id) => handleFaceDetect(id, false)}
+                              onRedetect={(id) => handleFaceDetect(id, true)}
+                              onRetryProcessing={handlePhotoRetry}
+                              retrying={retryingPhotoId === photo.id}
+                              showRetry={canModifyDetail && (photo.processing_status === 'FAILED' || photo.processing_status === 'UPLOADED')}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {canModifyDetail && (
+                        <div>
+                          <label className="btn btn-secondary" style={{ cursor: uploading ? 'wait' : 'pointer' }}>
+                            {uploading ? 'Uploading…' : 'Upload photo (JPEG/PNG/WebP, ≤10 MB)'}
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              onChange={handlePhotoUpload}
+                              disabled={uploading}
+                              style={{ display: 'none' }}
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="evidence-section">
+                      <SectionHeader
+                        title="Sightings"
+                        meta={sightingsLoading ? '…' : `${caseSightings.length} linked`}
+                      />
+                      {sightingsLoading ? (
+                        <p className="cases-state-text">Loading sightings...</p>
+                      ) : sightingsError ? (
+                        <p className="cases-state-text">{sightingsError}</p>
+                      ) : caseSightings.length === 0 ? (
+                        <p className="cases-state-text">No sightings reported for this case yet.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          {caseSightings.slice(0, 5).map((sighting) => (
+                            <div
+                              key={sighting.id}
+                              style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}
+                            >
+                              <div style={{ fontWeight: '600' }}>
+                                #{sighting.id} — {sighting.location_text}
+                              </div>
+                              <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                {formatDate(sighting.sighting_at)} · {sighting.status}
+                              </div>
+                            </div>
+                          ))}
+                          {caseSightings.length > 5 && (
+                            <p className="cases-state-text">
+                              …and {caseSightings.length - 5} more.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      <div>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => {
+                            setShowDetailModal(false);
+                            navigate('/sightings');
+                          }}
+                        >
+                          Open sighting reports
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )
               ) : null}
-            </div>
             <div className="modal-footer">
               {detailCase && !detailLoading && !detailError && (
                 user && (user.role === 'ADMIN' || detailCase.created_by === user.id)
               ) && (
                 isEditing ? (
                   <>
-                    <button 
+                    <button
                       type="button"
-                      className="btn btn-secondary" 
-                      onClick={cancelEditing} 
+                      className="btn btn-secondary"
+                      onClick={cancelEditing}
                       disabled={editSubmitting}
                     >
                       Cancel
                     </button>
-                    <button 
+                    <button
                       type="button"
-                      className="btn btn-primary" 
-                      onClick={handleUpdateSubmit} 
+                      className="btn btn-primary"
+                      onClick={handleUpdateSubmit}
                       disabled={editSubmitting || !!editSuccess}
                     >
-                      {editSubmitting ? 'Saving...' : 'Save Changes'}
+                      {editSubmitting ? 'Saving…' : 'Save changes'}
                     </button>
                   </>
                 ) : (
                   <>
-                    <button 
+                    <button
                       type="button"
-                      className="btn btn-danger" 
+                      className="btn btn-danger"
                       onClick={() => promptDeleteCase(detailCase)}
                     >
-                      🗑️ Delete Case
+                      Delete case
                     </button>
-                    <button 
+                    <button
                       type="button"
-                      className="btn btn-primary" 
+                      className="btn btn-primary"
                       onClick={startEditing}
                     >
-                      ✏️ Edit Case
+                      Edit case
                     </button>
                   </>
                 )
               )}
               {!isEditing && (
-                <button className="btn btn-secondary" onClick={() => setShowDetailModal(false)}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowDetailModal(false)}>
                   Close
                 </button>
               )}
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* DELETE CONFIRMATION MODAL */}
       {showDeleteModal && caseToDelete && (
-        <div className="modal-overlay" onClick={cancelDeleteCase}>
-          <div className="modal-content" style={{ maxWidth: '460px' }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Confirm Case Deletion</h2>
-              <button 
-                className="modal-close-btn" 
-                onClick={cancelDeleteCase}
-                disabled={deleteSubmitting}
-              >
-                &times;
-              </button>
-            </div>
-            <div className="modal-body">
+        <Modal title="Confirm case deletion" onClose={cancelDeleteCase}>
               {deleteError && (
-                <div className="alert alert-error">
+                <div className="alert alert-error" role="alert">
                   {deleteError}
                 </div>
               )}
               <p style={{ fontSize: '0.95rem', color: 'var(--text-primary)', marginBottom: '0.75rem' }}>
-                Are you sure you want to permanently delete <strong>Case #{caseToDelete.id}</strong> (&ldquo;{caseToDelete.title}&rdquo;)?
+                Permanently delete <strong>Case #{caseToDelete.id}</strong> (&ldquo;{caseToDelete.title}&rdquo;)?
               </p>
               <p style={{ fontSize: '0.85rem', color: 'var(--error)' }}>
-                ⚠️ This action cannot be undone. All records associated with this case will be permanently removed.
+                This cannot be undone. All records for this case, including evidence and sightings, will be removed.
               </p>
-            </div>
             <div className="modal-footer">
               <button
                 type="button"
@@ -740,11 +1115,10 @@ export const Cases = () => {
                 onClick={handleConfirmDelete}
                 disabled={deleteSubmitting}
               >
-                {deleteSubmitting ? 'Deleting...' : 'Delete Case'}
+                {deleteSubmitting ? 'Deleting…' : 'Delete case'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

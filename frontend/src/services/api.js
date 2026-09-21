@@ -57,6 +57,152 @@ export const authService = {
   },
 };
 
+export const orgService = {
+  listOrganizations: async () => {
+    const response = await api.get('/organizations');
+    return response.data;
+  },
+
+  getOrganization: async (id) => {
+    const response = await api.get(`/organizations/${id}`);
+    return response.data;
+  },
+
+  listMembers: async (orgId) => {
+    const response = await api.get(`/organizations/${orgId}/members`);
+    return response.data;
+  },
+};
+
+export const photoService = {
+  listPhotos: async (caseId) => {
+    const response = await api.get(`/cases/${caseId}/photos`);
+    return response.data;
+  },
+
+  getPhoto: async (caseId, photoId) => {
+    const response = await api.get(`/cases/${caseId}/photos/${photoId}`);
+    return response.data;
+  },
+
+  uploadPhoto: async (caseId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post(`/cases/${caseId}/photos`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  deletePhoto: async (caseId, photoId) => {
+    const response = await api.delete(`/cases/${caseId}/photos/${photoId}`);
+    return response.data;
+  },
+
+  retryPhoto: async (caseId, photoId) => {
+    const response = await api.post(`/cases/${caseId}/photos/${photoId}/retry`);
+    return response.data;
+  },
+
+  detectFaces: async (caseId, photoId) => {
+    const response = await api.post(`/cases/${caseId}/photos/${photoId}/faces/detect`);
+    return response.data;
+  },
+
+  redetectFaces: async (caseId, photoId) => {
+    const response = await api.post(`/cases/${caseId}/photos/${photoId}/faces/redetect`);
+    return response.data;
+  },
+
+  getFaces: async (caseId, photoId) => {
+    const response = await api.get(`/cases/${caseId}/photos/${photoId}/faces`);
+    return response.data;
+  },
+};
+
+export const sightingService = {
+  listSightings: async (caseId) => {
+    const response = await api.get(`/cases/${caseId}/sightings`);
+    return response.data;
+  },
+
+  listAllSightings: async () => {
+    const response = await api.get('/sightings');
+    return response.data;
+  },
+
+  getSighting: async (caseId, sightingId) => {
+    const response = await api.get(`/cases/${caseId}/sightings/${sightingId}`);
+    return response.data;
+  },
+
+  createSighting: async (caseId, sightingData) => {
+    const response = await api.post(`/cases/${caseId}/sightings`, sightingData);
+    return response.data;
+  },
+
+  updateSighting: async (caseId, sightingId, data) => {
+    const response = await api.patch(`/cases/${caseId}/sightings/${sightingId}`, data);
+    return response.data;
+  },
+
+  deleteSighting: async (caseId, sightingId) => {
+    const response = await api.delete(`/cases/${caseId}/sightings/${sightingId}`);
+    return response.data;
+  },
+
+  listSightingPhotos: async (caseId, sightingId) => {
+    const response = await api.get(`/cases/${caseId}/sightings/${sightingId}/photos`);
+    return response.data;
+  },
+
+  uploadSightingPhoto: async (caseId, sightingId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post(
+      `/cases/${caseId}/sightings/${sightingId}/photos`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return response.data;
+  },
+
+  deleteSightingPhoto: async (caseId, sightingId, photoId) => {
+    const response = await api.delete(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}`
+    );
+    return response.data;
+  },
+
+  retrySightingPhoto: async (caseId, sightingId, photoId) => {
+    const response = await api.post(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/retry`
+    );
+    return response.data;
+  },
+
+  detectSightingFaces: async (caseId, sightingId, photoId) => {
+    const response = await api.post(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces/detect`
+    );
+    return response.data;
+  },
+
+  redetectSightingFaces: async (caseId, sightingId, photoId) => {
+    const response = await api.post(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces/redetect`
+    );
+    return response.data;
+  },
+
+  getSightingFaces: async (caseId, sightingId, photoId) => {
+    const response = await api.get(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces`
+    );
+    return response.data;
+  },
+};
+
 export const caseService = {
   getCases: async () => {
     const response = await api.get('/cases');

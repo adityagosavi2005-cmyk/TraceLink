@@ -6,6 +6,12 @@ from sqlalchemy import pool
 from app.core.database import engine, Base
 from app.models.user import User
 from app.models.case import Case
+from app.models.organization import Organization, Membership
+from app.models.case_photo import CasePhoto
+from app.models.sighting import Sighting
+from app.models.sighting_photo import SightingPhoto
+from app.models.face_detection import FaceDetection, FaceDetectionRun
+from app.models.face_embedding import FaceEmbedding
 
 
 # Alembic Config object

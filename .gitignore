@@ -35,3 +35,8 @@ frontend/build/
 # OS
 .DS_Store
 Thumbs.db
+# Model weights (local only, never commit)
+backend/app/assets/*.onnx
+
+# Muse conversation exports (local only, never commit)
+/conversation-*.txt

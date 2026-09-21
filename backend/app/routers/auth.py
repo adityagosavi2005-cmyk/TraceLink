@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import (hash_password, verify_password, create_access_token)
 from app.models.user import User
-from app.schemas.user import UserCreate, UserLogin
+from app.schemas.user import UserCreate, UserLogin, UserResponse
 from app.core.dependencies import get_current_user, require_role
 from app.models.user import User, UserRole
 from app.schemas.user import AdminCreate
@@ -89,16 +89,11 @@ def login(
     }
 
 
-@router.get("/me")
+@router.get("/me", response_model=UserResponse)
 def get_me(
     current_user: User = Depends(get_current_user)
 ):
-    return {
-        "id": current_user.id,
-        "name": current_user.name,
-        "email": current_user.email,
-        "role": current_user.role.value
-    }
+    return current_user
 
 @router.get("/admin-test")
 def admin_test(
@@ -129,7 +124,7 @@ def create_admin(
 
     if existing_user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered"
         )
 

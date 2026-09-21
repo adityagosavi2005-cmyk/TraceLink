@@ -130,6 +130,111 @@
   line-height: 1.5;
 }
 
+/* Workspace stat cards */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.stat-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  position: relative;
+}
+
+.stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-label {
+  font-size: var(--font-meta);
+  color: var(--text-secondary);
+}
+
+.stat-dot {
+  position: absolute;
+  top: 0.9rem;
+  right: 0.9rem;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.stat-dot-success { background-color: var(--success); }
+.stat-dot-warning { background-color: var(--warning); }
+.stat-dot-info { background-color: var(--info); }
+
+.recent-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border-color);
+  width: 100%;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recent-item:last-child {
+  border-bottom: none;
+}
+
+.recent-item:hover .recent-title {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+button.recent-item {
+  cursor: pointer;
+}
+
+.recent-id {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-width: 3.5rem;
+}
+
+.recent-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.recent-title {
+  font-weight: 600;
+  font-size: var(--font-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-sub {
+  font-size: var(--font-meta);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Profile details */
 .profile-card {
   background-color: var(--bg-secondary);

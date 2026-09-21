@@ -1,0 +1,7 @@
+# TraceLink backend — test-only dependencies.
+# Install after requirements.txt:  pip install -r requirements-test.txt
+# Run from backend/:  python -m pytest tests/ -v
+
+pytest>=8.0
+httpx==0.28.1
+moto>=5.0

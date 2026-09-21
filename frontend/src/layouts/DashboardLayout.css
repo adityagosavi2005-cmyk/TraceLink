@@ -71,7 +71,16 @@
 
 .nav-link-item.active {
   background-color: var(--accent-light);
-  color: var(--accent);
+  color: #c3d5f8;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.nav-link-item svg {
+  flex-shrink: 0;
+}
+
+.sidebar-logout-compact {
+  display: none;
 }
 
 .sidebar-footer {
@@ -197,6 +206,9 @@
   }
   .sidebar-footer {
     display: none;
+  }
+  .sidebar-logout-compact {
+    display: inline-flex;
   }
   .page-content-wrapper {
     padding: 1rem;

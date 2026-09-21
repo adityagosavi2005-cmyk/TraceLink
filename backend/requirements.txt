@@ -1,0 +1,31 @@
+# TraceLink backend — runtime dependencies.
+#
+# These are the DIRECT dependencies the Phase-0 backend actually imports.
+# Versions are pinned to the environment verified during Phase 0.
+# Python: 3.13 (uses `X | None` syntax; 3.10+ compatible).
+#
+# Install:  pip install -r requirements.txt
+# Run DB migrations:  alembic upgrade head
+
+alembic==1.19.1
+boto3>=1.34
+email-validator==2.3.0
+fastapi==0.141.1
+# Phase 4: YuNet production face detector (OpenCV FaceDetectorYN).
+# Imported lazily; the app and FakeDetector-based tests run without it.
+opencv-python-headless>=4.6
+# Phase 5: face representations stored as PostgreSQL VECTOR(128).
+# Imported at model load; the pgvector type compiles on PostgreSQL
+# and is exercised by the PostgreSQL-backed embedding tests.
+pgvector>=0.5
+Pillow>=10
+python-multipart>=0.0.12
+psycopg==3.3.4
+psycopg-binary==3.3.4
+pydantic==2.13.4
+pydantic-settings==2.15.0
+pwdlib==0.3.1
+argon2-cffi==25.1.0
+pyjwt==2.13.0
+sqlalchemy==2.0.52
+uvicorn==0.52.2
