@@ -300,16 +300,28 @@ def test_represent_reuses_existing_without_recompute(
 ):
     _, photo, _ = _setup_detected(client, db, s3mock, fake_factory)
     fake = FakeRepresentation()
-    first = face_representation_service.represent_photo_faces(
-        TestSession(), "case", _photo_row(photo["id"]), fake
-    )
-    calls_after_first = len(fake.calls)
-    assert calls_after_first == 2
-    second = face_representation_service.represent_photo_faces(
-        TestSession(), "case", _photo_row(photo["id"]), fake
-    )
-    assert [r.id for r in first] == [r.id for r in second]
-    assert len(fake.calls) == calls_after_first
+    # Sessions stay bound until the ids are compared: rows created
+    # by a committed-then-collected session are detached, and
+    # reading their expired attributes raises DetachedInstanceError
+    # instead of testing reuse.
+    first_session = TestSession()
+    try:
+        first = face_representation_service.represent_photo_faces(
+            first_session, "case", _photo_row(photo["id"]), fake
+        )
+        calls_after_first = len(fake.calls)
+        assert calls_after_first == 2
+        second_session = TestSession()
+        try:
+            second = face_representation_service.represent_photo_faces(
+                second_session, "case", _photo_row(photo["id"]), fake
+            )
+            assert [r.id for r in first] == [r.id for r in second]
+            assert len(fake.calls) == calls_after_first
+        finally:
+            second_session.close()
+    finally:
+        first_session.close()
     assert _embedding_count(photo["id"]) == 2
 
 

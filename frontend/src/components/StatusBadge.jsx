@@ -46,6 +46,34 @@ export const PhotoStatusBadge = ({ status }) => (
   </span>
 );
 
+export const EnhancementStatusBadge = ({ status }) => {
+  if (status === 'COMPLETE') {
+    return <span className="badge badge-success">Enhancement complete</span>;
+  }
+  if (status === 'FAILED') {
+    return <span className="badge badge-admin">Enhancement failed</span>;
+  }
+  if (status === 'PROCESSING') {
+    return <span className="badge badge-reviewer">Enhancing…</span>;
+  }
+  return <span className="badge badge-reporter">{status || 'Unknown'}</span>;
+};
+
+export const SourceBadge = ({ sourceType, runId }) => {
+  if (sourceType === 'ENHANCED') {
+    return (
+      <span className="badge badge-reviewer" title="Produced from an explicitly selected enhancement run">
+        {runId ? `Enhanced · Run #${runId}` : 'Enhanced'}
+      </span>
+    );
+  }
+  return (
+    <span className="badge badge-org" title="Produced from the normal Phase 3 derived image">
+      Derived
+    </span>
+  );
+};
+
 export const FaceStatusBadge = ({ status, faceCount }) => {
   if (status === 'COMPLETE') {
     return (

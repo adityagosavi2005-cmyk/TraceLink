@@ -1,0 +1,26 @@
+# TraceLink backend -- Phase 7 image-enhancement runtime (optional).
+#
+# The default install (requirements.txt) runs the full API WITHOUT
+# enhancement: the Real-ESRGAN adapter loads lazily and enhancement
+# attempts fail with a controlled error when this runtime is absent.
+# Install this file to enable enhancement on a server with the
+# RealESRGAN_x4plus weights (see backend/app/assets/README.md).
+#
+# Deliberately NOT included: realesrgan / basicsr / gfpgan.
+# basicsr 1.4.2 (latest) imports a torchvision API removed from
+# modern torchvision releases, and realesrgan drags GFPGAN (an
+# explicit Phase 7 non-goal). The adapter
+# (backend/app/services/realesrgan_adapter.py) implements the
+# standard RRDBNet inference directly on torch, so torch is the
+# only additional runtime.
+#
+# Install:  pip install -r requirements-enhancement.txt
+#
+# CPU build (default, verified with the Phase 7 adapter):
+--index-url https://download.pytorch.org/whl/cpu
+torch==2.9.1+cpu
+#
+# GPU servers: install the matching CUDA build from the PyTorch
+# index instead, e.g.:
+#   pip install torch==2.9.1 --index-url https://download.pytorch.org/whl/cu128
+# then set ENHANCER_DEVICE=cuda (see backend/.env.example).

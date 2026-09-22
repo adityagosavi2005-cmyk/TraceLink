@@ -7,10 +7,13 @@ and must never construct S3 clients themselves.
 Layout:
     originals/{case_id}/{photo_id}/{sha256}.{ext}   (write-once)
     derived/{case_id}/{photo_id}/{derived_sha}.jpg  (Phase 3 rendition)
+    enhanced/{case_id}/{photo_id}/{output_sha}.jpg  (Phase 7 artifact)
     originals/sightings/{case_id}/{sighting_id}/{photo_id}/{sha256}.{ext}
                                                     (Phase 2, write-once)
     derived/sightings/{case_id}/{sighting_id}/{photo_id}/{derived_sha}.jpg
                                                     (Phase 3 rendition)
+    enhanced/sightings/{case_id}/{sighting_id}/{photo_id}/{output_sha}.jpg
+                                                    (Phase 7 artifact)
 
 All reads are served as short-lived presigned GET URLs minted after
 the caller has passed the normal authorization checks.
@@ -23,6 +26,7 @@ from app.core.config import settings
 
 ORIGINALS_PREFIX = "originals"
 DERIVED_PREFIX = "derived"
+ENHANCED_PREFIX = "enhanced"
 SIGHTINGS_SEGMENT = "sightings"
 
 
@@ -213,6 +217,93 @@ def derived_sighting_photo_prefix(
     """Phase 4+ rendition scope for one sighting photo (empty now)."""
     return "%s/%s/%d/%d/%d/" % (
         DERIVED_PREFIX,
+        SIGHTINGS_SEGMENT,
+        case_id,
+        sighting_id,
+        photo_id,
+    )
+
+
+def build_enhanced_key(
+    case_id: int, photo_id: int, output_sha: str
+) -> str:
+    """Deterministic enhanced key for one case photo (Phase 7).
+
+    Layout: enhanced/{case_id}/{photo_id}/{output_sha}.jpg
+    """
+    return "%s/%d/%d/%s.jpg" % (
+        ENHANCED_PREFIX,
+        case_id,
+        photo_id,
+        output_sha,
+    )
+
+
+def build_sighting_enhanced_key(
+    case_id: int,
+    sighting_id: int,
+    photo_id: int,
+    output_sha: str,
+) -> str:
+    """Deterministic enhanced key for one sighting photo (Phase 7).
+
+    Layout: enhanced/sightings/{case_id}/{sighting_id}/{photo_id}/
+    {output_sha}.jpg
+    """
+    return "%s/%s/%d/%d/%d/%s.jpg" % (
+        ENHANCED_PREFIX,
+        SIGHTINGS_SEGMENT,
+        case_id,
+        sighting_id,
+        photo_id,
+        output_sha,
+    )
+
+
+def put_enhanced(key: str, data: bytes, content_type: str) -> None:
+    """Store one Phase 7 enhanced artifact (enhanced/ scope only).
+
+    Separate from put_original/put_derived so enhancement output can
+    never address the immutable originals/ evidence scope or the
+    Phase 3 derived scope. Callers must build the key with
+    build_enhanced_key / build_sighting_enhanced_key above.
+    """
+    if not key.startswith(ENHANCED_PREFIX + "/"):
+        raise ValueError("Enhanced objects must live under enhanced/")
+    _client().put_object(
+        Bucket=settings.S3_BUCKET,
+        Key=key,
+        Body=data,
+        ContentType=content_type,
+    )
+
+
+def get_enhanced_bytes(key: str) -> bytes:
+    """Read Phase 7 enhanced bytes back for AI processing.
+
+    Guards the enhanced/ scope the same way put_enhanced guards
+    writes.
+    """
+    if not key.startswith(ENHANCED_PREFIX + "/"):
+        raise ValueError("Enhanced objects must live under enhanced/")
+    response = _client().get_object(
+        Bucket=settings.S3_BUCKET,
+        Key=key,
+    )
+    return response["Body"].read()
+
+
+def enhanced_photo_prefix(case_id: int, photo_id: int) -> str:
+    """Phase 7 artifact scope for one case photo."""
+    return "%s/%d/%d/" % (ENHANCED_PREFIX, case_id, photo_id)
+
+
+def enhanced_sighting_photo_prefix(
+    case_id: int, sighting_id: int, photo_id: int
+) -> str:
+    """Phase 7 artifact scope for one sighting photo."""
+    return "%s/%s/%d/%d/%d/" % (
+        ENHANCED_PREFIX,
         SIGHTINGS_SEGMENT,
         case_id,
         sighting_id,

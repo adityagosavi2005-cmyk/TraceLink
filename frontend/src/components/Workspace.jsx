@@ -43,6 +43,7 @@ export const PhotoCard = ({
   onRetryProcessing,
   retrying,
   showRetry,
+  onOpenAI,
 }) => {
   const faceStatus = photo.face_detection_status || 'NOT_RUN';
   const hasFaceResult = faceStatus && faceStatus !== 'NOT_RUN';
@@ -85,6 +86,19 @@ export const PhotoCard = ({
         </div>
         {photo.processing_status === 'FAILED' && photo.processing_error && (
           <div className="photo-error">{photo.processing_error}</div>
+        )}
+        {onOpenAI && photo.processing_status === 'READY' && (
+          <div className="photo-status-row">
+            <button
+              type="button"
+              className="btn btn-ai btn-sm"
+              onClick={() => onOpenAI(photo.id)}
+              disabled={busy}
+              title="Open AI workflow: faces, optional enhancement, similarity"
+            >
+              AI workflow
+            </button>
+          </div>
         )}
         <div className="photo-status-row">
           <FaceStatusBadge status={faceStatus} faceCount={photo.face_count} />

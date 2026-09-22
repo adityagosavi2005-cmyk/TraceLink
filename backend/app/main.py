@@ -7,6 +7,10 @@ from app.routers.sightings import index_router as sightings_index_router
 from app.routers.sighting_photos import router as sighting_photos_router
 from app.routers.face_detections import case_router as face_case_router
 from app.routers.face_detections import sighting_router as face_sighting_router
+from app.routers.enhancements import case_router as enhancement_case_router
+from app.routers.enhancements import (
+    sighting_router as enhancement_sighting_router,
+)
 from app.routers.similarity import router as similarity_router
 from app.routers.organizations import router as organizations_router
 
@@ -34,6 +38,8 @@ app.include_router(sightings_index_router)
 app.include_router(sighting_photos_router)
 app.include_router(face_case_router)
 app.include_router(face_sighting_router)
+app.include_router(enhancement_case_router)
+app.include_router(enhancement_sighting_router)
 app.include_router(similarity_router)
 app.include_router(organizations_router)
 

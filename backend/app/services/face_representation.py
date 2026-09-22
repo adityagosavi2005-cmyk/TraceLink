@@ -59,7 +59,7 @@ class RepresentationError(Exception):
 
 @dataclass(frozen=True)
 class FaceGeometry:
-    """One Phase 4 face in derived-image pixel coordinates.
+    """One Phase 4 face in source-image pixel coordinates.
 
     Mirrors the persisted FaceDetection bbox + landmarks columns so
     the adapter never touches ORM rows directly.

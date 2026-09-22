@@ -1,15 +1,19 @@
-"""Face-similarity retrieval (Phase 6).
+"""Face-similarity retrieval (Phase 6 + Phase 7 sources).
 
 Case faces search sighting faces and sighting faces search case
 faces (never same-type). Retrieval is technical similarity only:
 it never determines identity and never persists results.
 
-Validity model (shared with Phase 4/5, not redefined here): a
+Validity model (shared with Phase 4/5/7, not redefined here): a
 candidate embedding participates only when it matches the active
-representation identity, its face sits on the current valid
-COMPLETE detection run for its photo, and its source derived SHA
-matches the photo's current derived image. History rows are
-never treated as current.
+representation identity and its source still verifies through the
+centralized image_source resolver (artifact present, SHAs match).
+Normal (DERIVED) candidates additionally require the current valid
+COMPLETE detection run for their photo; enhanced (ENHANCED)
+candidates require a valid enhancement chain instead, so several
+enhancements of one photo may each contribute candidates. Scores
+are never merged and no source is preferred: every result carries
+its source provenance. History rows are never treated as current.
 
 Metric: cosine similarity via pgvector cosine distance
 (``embedding <=> query``) with ``similarity = 1 - distance``.
@@ -28,6 +32,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.case import Case
 from app.models.case_photo import CasePhoto
+from app.models.enhancement import ImageSourceType
 from app.models.face_detection import (
     FaceDetection,
     FaceDetectionRun,
@@ -35,7 +40,7 @@ from app.models.face_detection import (
 )
 from app.models.face_embedding import FaceEmbedding
 from app.models.sighting_photo import SightingPhoto
-from app.services import face_detection_service
+from app.services import face_detection_service, image_source
 from app.services.face_representation import REPRESENTATION_DIMENSION
 from app.services.face_representation_service import get_existing_embedding
 
@@ -123,16 +128,21 @@ def get_query_embedding(
         representation.model_version,
     )
     run = db.get(FaceDetectionRun, face.run_id)
-    if (
-        run is None
-        or run.status != FaceDetectionStatus.COMPLETE
-        or run.source_derived_sha != photo.derived_sha256
-    ):
+    if run is None or run.status != FaceDetectionStatus.COMPLETE:
         raise _conflict(
             "Query face is not on a current face-detection run; "
             "run face detection first"
         )
-    row = get_existing_embedding(db, face.id, identity)
+    try:
+        source = image_source.resolve_run_source(db, run, photo)
+    except image_source.SourceResolutionError:
+        raise _conflict(
+            "Query face is not on a current face-detection run; "
+            "run face detection first"
+        )
+    row = get_existing_embedding(
+        db, face.id, identity, source.source_type, source.source_sha256
+    )
     if row is None:
         raise _conflict(
             "Query face has no face representation yet; "
@@ -190,13 +200,15 @@ def collect_candidates(
 ) -> list[dict]:
     """Valid opposite-type candidates with their provenance.
 
-    Applies every Phase 6 validity rule (compatible identity,
-    current COMPLETE run, current derived SHA, opposite
-    evidence type, query-face exclusion, organization scope)
-    BEFORE any distance is computed, so unauthorized or stale
-    rows can never leak into ranking. Returns plain dicts
-    (never ORM rows with raw vectors attached beyond the
-    embedding values needed for scoring).
+    Applies every Phase 6/7 validity rule (compatible identity,
+    verified source, opposite evidence type, query-face exclusion,
+    organization scope) BEFORE any distance is computed, so
+    unauthorized or stale rows can never leak into ranking. Normal
+    candidates additionally require the current COMPLETE run;
+    enhanced candidates require a valid enhancement chain instead
+    (several enhancements of one photo may each qualify). Returns
+    plain dicts (never ORM rows with raw vectors attached beyond
+    the embedding values needed for scoring).
     """
     rep_name, rep_version, model_name, model_version, dimension = (
         active_retrieval_identity()
@@ -231,6 +243,7 @@ def collect_candidates(
     run_cache: dict[int, FaceDetectionRun | None] = {}
     photo_cache: dict[tuple[str, int], object] = {}
     case_cache: dict[int, Case | None] = {}
+    source_cache: dict[int, object] = {}
     for embedding, face in rows:
         run_id = face.run_id
         if run_id not in run_cache:
@@ -249,11 +262,30 @@ def collect_candidates(
         photo = photo_cache[cache_key]
         if photo is None:
             continue
-        if run.source_derived_sha != photo.derived_sha256:
+        # Centralized source verification (artifact present, SHAs
+        # match, enhancement chain valid when ENHANCED). Stale,
+        # deleted, or tampered sources never reach ranking.
+        if run_id not in source_cache:
+            try:
+                source_cache[run_id] = image_source.resolve_run_source(
+                    db, run, photo
+                )
+            except image_source.SourceResolutionError:
+                source_cache[run_id] = None
+        source = source_cache[run_id]
+        if source is None:
+            continue
+        if (
+            embedding.source_type != run.source_type
+            or embedding.source_sha256 != source.source_sha256
+        ):
             continue
         if embedding.source_derived_sha256 != photo.derived_sha256:
             continue
-        if not _run_is_current_for_photo(db, opposite, photo, run):
+        if run.source_type == ImageSourceType.DERIVED:
+            if not _run_is_current_for_photo(db, opposite, photo, run):
+                continue
+        elif run.enhancement_run_id is None:
             continue
         if face.case_id not in case_cache:
             case_cache[face.case_id] = db.get(Case, face.case_id)
@@ -288,6 +320,12 @@ def _build_item(candidate: dict, photo_type: str, similarity: float) -> dict:
         "sighting_id": run.sighting_id,
         "case_id": face.case_id,
         "similarity": similarity,
+        # Phase 7 provenance: DERIVED (normal) vs ENHANCED plus
+        # the enhancement run behind an enhanced candidate.
+        "source_type": run.source_type.value
+        if isinstance(run.source_type, ImageSourceType)
+        else run.source_type,
+        "enhancement_run_id": run.enhancement_run_id,
     }
 
 

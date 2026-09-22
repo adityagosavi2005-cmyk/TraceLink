@@ -25,6 +25,10 @@ class SimilarityCandidate(BaseModel):
     sighting_id: int | None = None
     case_id: int
     similarity: float
+    # Phase 7 source provenance: DERIVED (normal Phase 3 image) or
+    # ENHANCED, plus the enhancement run behind enhanced results.
+    source_type: str = "DERIVED"
+    enhancement_run_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

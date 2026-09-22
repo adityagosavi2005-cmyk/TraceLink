@@ -10,8 +10,11 @@ from app.models.organization import Organization, Membership
 from app.models.case_photo import CasePhoto
 from app.models.sighting import Sighting
 from app.models.sighting_photo import SightingPhoto
+from app.models.enhancement import EnhancementRun
 from app.models.face_detection import FaceDetection, FaceDetectionRun
 from app.models.face_embedding import FaceEmbedding
+
+assert EnhancementRun is not None  # register Phase 7 metadata
 
 
 # Alembic Config object

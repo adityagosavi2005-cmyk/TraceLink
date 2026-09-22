@@ -1,4 +1,4 @@
-"""Face-detection orchestration (Phase 4).
+"""Face-detection orchestration (Phase 4 + Phase 7 sources).
 
 Shared by the case-photo and sighting-photo face routers so both
 photo types detect identically. Runs synchronously inside the
@@ -6,17 +6,23 @@ triggering request; no queues or workers.
 
 Flow per explicit trigger:
     READY photo -> reuse current COMPLETE run, else
-    PROCESSING run -> derived bytes -> SHA verify -> detector ->
+    PROCESSING run -> resolved source bytes -> detector ->
     normalize/clamp/filter -> face rows -> COMPLETE run.
     Any failure -> FAILED run (the photo's Phase 3 status is never
     touched).
 
+The detector stays source-agnostic (image bytes + dimensions in).
+Source selection is centralized in image_source: the normal path
+consumes the Phase 3 derived image, while an explicit
+enhancement_run_id selects one COMPLETE enhancement output (never
+the latest). Coordinates are recorded in source-image pixels.
+
 This module performs persistence and storage reads on the caller's
 behalf, but never authorization and never key construction: routers
-enforce permissions; storage keys come from the photo row.
+enforce permissions; storage keys come from the photo row (derived)
+or the enhancement run row (enhanced).
 """
 
-import hashlib
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
@@ -24,13 +30,15 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.case_photo import PhotoStatus
+from app.models.enhancement import ImageSourceType
 from app.models.face_detection import (
     FaceDetection,
     FaceDetectionRun,
     FaceDetectionStatus,
 )
-from app.services import storage
+from app.services import image_source
 from app.services.face_detector import DetectedFace, FaceDetector
+from app.services.image_source import ImageSource
 from app.services.preprocessing import STALE_PROCESSING_THRESHOLD_SECONDS
 
 
@@ -61,7 +69,12 @@ def _runs_query(db: Session, kind: str, photo_id: int):
 def get_current_run(
     db: Session, kind: str, photo
 ) -> FaceDetectionRun | None:
-    """Newest COMPLETE run matching active config + derived SHA."""
+    """Newest COMPLETE normal run matching active config + source.
+
+    Only DERIVED runs qualify: enhanced faces are never silently
+    chosen as "current". Callers wanting an enhanced result must
+    resolve it explicitly via get_current_enhanced_run.
+    """
     name, version, threshold = active_detector_identity()
     return (
         _runs_query(db, kind, photo.id)
@@ -70,10 +83,53 @@ def get_current_run(
             FaceDetectionRun.detector_name == name,
             FaceDetectionRun.detector_version == version,
             FaceDetectionRun.threshold == threshold,
+            FaceDetectionRun.source_type == ImageSourceType.DERIVED,
             FaceDetectionRun.source_derived_sha == photo.derived_sha256,
+            FaceDetectionRun.source_sha256 == photo.derived_sha256,
         )
         .order_by(FaceDetectionRun.id.desc())
         .first()
+    )
+
+
+def get_current_enhanced_run(
+    db: Session, kind: str, photo, enhancement_run_id: int
+) -> FaceDetectionRun | None:
+    """Newest COMPLETE run on one explicitly selected enhancement."""
+    name, version, threshold = active_detector_identity()
+    return (
+        _runs_query(db, kind, photo.id)
+        .filter(
+            FaceDetectionRun.status == FaceDetectionStatus.COMPLETE,
+            FaceDetectionRun.detector_name == name,
+            FaceDetectionRun.detector_version == version,
+            FaceDetectionRun.threshold == threshold,
+            FaceDetectionRun.source_type == ImageSourceType.ENHANCED,
+            FaceDetectionRun.enhancement_run_id == enhancement_run_id,
+        )
+        .order_by(FaceDetectionRun.id.desc())
+        .first()
+    )
+
+
+def _resolution_error_to_http(exc: Exception):
+    """Map source-resolution failures to router-facing errors."""
+    from fastapi import HTTPException, status as http_status
+
+    from app.services.image_source import SourceResolutionError
+
+    if isinstance(exc, SourceResolutionError) and (
+        "not found" in str(exc).lower()
+    ):
+        return HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+    return HTTPException(
+        status_code=http_status.HTTP_409_CONFLICT,
+        detail=str(exc)
+        if isinstance(exc, SourceResolutionError)
+        else "Face detection failed; try again later",
     )
 
 
@@ -132,7 +188,7 @@ def normalize_faces(
 ) -> list[DetectedFace]:
     """Clamp, validate, and deterministically order raw detections.
 
-    Coordinates are kept in derived-image pixels. Zero-area or
+    Coordinates are kept in source-image pixels. Zero-area or
     out-of-frame boxes are dropped; survivors are ordered by
     confidence (desc), then coordinates, so ordinals are stable.
     """
@@ -178,7 +234,40 @@ def _finish_run_failed(
     return run
 
 
-def _new_run(db: Session, kind: str, photo) -> FaceDetectionRun:
+def _declared_source(photo, resolved=None) -> dict:
+    """Provenance a new run row declares for its attempted source.
+
+    For the normal path this is known before any bytes are read
+    (the Phase 3 artifact); for the enhanced path it comes from
+    the already-validated resolution. A run that later fails still
+    records what it attempted, never what it consumed.
+    """
+    if resolved is not None:
+        return {
+            "source_type": resolved.source_type,
+            "source_sha256": resolved.source_sha256,
+            "enhancement_run_id": (
+                resolved.enhancement_run.id
+                if resolved.enhancement_run is not None
+                else None
+            ),
+            "source_width": resolved.width,
+            "source_height": resolved.height,
+            "source_derived_sha": resolved.source_derived_sha,
+        }
+    return {
+        "source_type": ImageSourceType.DERIVED,
+        "source_sha256": photo.derived_sha256,
+        "enhancement_run_id": None,
+        "source_width": photo.derived_width,
+        "source_height": photo.derived_height,
+        "source_derived_sha": photo.derived_sha256,
+    }
+
+
+def _new_run(db: Session, kind: str, photo, declared: dict) -> (
+    FaceDetectionRun
+):
     name, version, threshold = active_detector_identity()
     case_photo_id, sighting_photo_id = _photo_parent(photo, kind)
     run = FaceDetectionRun(
@@ -190,9 +279,14 @@ def _new_run(db: Session, kind: str, photo) -> FaceDetectionRun:
         detector_name=name,
         detector_version=version,
         threshold=threshold,
-        source_derived_sha=photo.derived_sha256,
+        source_derived_sha=declared["source_derived_sha"],
         source_derived_width=photo.derived_width,
         source_derived_height=photo.derived_height,
+        source_type=declared["source_type"],
+        source_sha256=declared["source_sha256"],
+        enhancement_run_id=declared["enhancement_run_id"],
+        source_width=declared["source_width"],
+        source_height=declared["source_height"],
         face_count=0,
         error=None,
         started_at=datetime.now(timezone.utc),
@@ -204,26 +298,17 @@ def _new_run(db: Session, kind: str, photo) -> FaceDetectionRun:
 
 
 def _execute_run(
-    db: Session, kind: str, photo, run: FaceDetectionRun, detector
+    db: Session,
+    kind: str,
+    photo,
+    run: FaceDetectionRun,
+    detector,
+    source: ImageSource,
 ) -> FaceDetectionRun:
-    """Read derived bytes, run the detector, persist faces."""
-    try:
-        derived_bytes = storage.get_derived_bytes(
-            photo.storage_key_derived
-        )
-    except Exception:
-        return _finish_run_failed(
-            db, run, "Derived image is unavailable; try again later"
-        )
-    if hashlib.sha256(derived_bytes).hexdigest() != photo.derived_sha256:
-        return _finish_run_failed(
-            db,
-            run,
-            "Derived image changed during processing; reprocess the photo",
-        )
+    """Run the detector on resolved source bytes, persist faces."""
     try:
         detected = detector.detect(
-            derived_bytes, photo.derived_width, photo.derived_height
+            source.image_bytes, source.width, source.height
         )
     except Exception as exc:
         from app.services.face_detector import DetectorError
@@ -235,7 +320,7 @@ def _execute_run(
         )
         return _finish_run_failed(db, run, message)
     faces = normalize_faces(
-        detected or [], photo.derived_width, photo.derived_height
+        detected or [], source.width, source.height
     )
     case_photo_id, sighting_photo_id = _photo_parent(photo, kind)
     for ordinal, face in enumerate(faces):
@@ -251,8 +336,8 @@ def _execute_run(
                 x_max=face.x_max,
                 y_max=face.y_max,
                 confidence=face.confidence,
-                frame_width=photo.derived_width,
-                frame_height=photo.derived_height,
+                frame_width=source.width,
+                frame_height=source.height,
                 landmarks=face.landmarks,
             )
         )
@@ -265,24 +350,68 @@ def _execute_run(
     return run
 
 
+def _resolve_source_or_raise(
+    db: Session, kind: str, photo, enhancement_run_id: int | None
+) -> ImageSource:
+    try:
+        return image_source.resolve_image_source(
+            db, kind, photo, enhancement_run_id
+        )
+    except Exception as exc:
+        raise _resolution_error_to_http(exc)
+
+
 def detect_faces(
     db: Session,
     kind: str,
     photo,
     detector: FaceDetector | None = None,
+    enhancement_run_id: int | None = None,
 ) -> FaceDetectionRun:
-    """Normal detect: reuse the current COMPLETE run when valid."""
+    """Detect, reusing the current valid result when present.
+
+    enhancement_run_id=None is the normal Phase 3 path; any other
+    value explicitly selects that enhancement (never the latest).
+    """
     ensure_ready(photo)
-    current = get_current_run(db, kind, photo)
-    if current is not None:
-        return current
-    ensure_no_active_run(db, kind, photo.id)
+    if enhancement_run_id is None:
+        # Normal path: preserve the Phase 4 contract exactly --
+        # reuse the current run when valid, else create a
+        # PROCESSING run FIRST so missing/tampered derived bytes
+        # resolve to a FAILED run (HTTP 200), never a bare error.
+        current = get_current_run(db, kind, photo)
+        if current is not None:
+            return current
+        ensure_no_active_run(db, kind, photo.id)
+        run = _new_run(db, kind, photo, _declared_source(photo))
+        try:
+            source = image_source.resolve_image_source(
+                db, kind, photo, None
+            )
+        except image_source.SourceResolutionError as exc:
+            return _finish_run_failed(db, run, str(exc))
+    else:
+        # Enhanced path: the explicit selection is validated BEFORE
+        # any run is created (unknown selection -> 404, stale or
+        # tampered source -> 409), so bad selections never pollute
+        # detection history.
+        source = _resolve_source_or_raise(
+            db, kind, photo, enhancement_run_id
+        )
+        current = get_current_enhanced_run(
+            db, kind, photo, enhancement_run_id
+        )
+        if current is not None:
+            return current
+        ensure_no_active_run(db, kind, photo.id)
+        run = _new_run(
+            db, kind, photo, _declared_source(photo, source)
+        )
     if detector is None:
         from app.services.yunet_detector import get_face_detector
 
         detector = get_face_detector()
-    run = _new_run(db, kind, photo)
-    return _execute_run(db, kind, photo, run, detector)
+    return _execute_run(db, kind, photo, run, detector, source)
 
 
 def redetect_faces(
@@ -290,16 +419,34 @@ def redetect_faces(
     kind: str,
     photo,
     detector: FaceDetector | None = None,
+    enhancement_run_id: int | None = None,
 ) -> FaceDetectionRun:
-    """Explicit re-detect: always create a new run (history kept)."""
+    """Explicit re-detect: always create a new run (history kept).
+
+    Enhanced redetect requires the explicit enhancement_run_id.
+    """
     ensure_ready(photo)
     ensure_no_active_run(db, kind, photo.id)
+    if enhancement_run_id is None:
+        run = _new_run(db, kind, photo, _declared_source(photo))
+        try:
+            source = image_source.resolve_image_source(
+                db, kind, photo, None
+            )
+        except image_source.SourceResolutionError as exc:
+            return _finish_run_failed(db, run, str(exc))
+    else:
+        source = _resolve_source_or_raise(
+            db, kind, photo, enhancement_run_id
+        )
+        run = _new_run(
+            db, kind, photo, _declared_source(photo, source)
+        )
     if detector is None:
         from app.services.yunet_detector import get_face_detector
 
         detector = get_face_detector()
-    run = _new_run(db, kind, photo)
-    return _execute_run(db, kind, photo, run, detector)
+    return _execute_run(db, kind, photo, run, detector, source)
 
 
 def delete_runs_for_photo(db: Session, kind: str, photo_id: int) -> None:

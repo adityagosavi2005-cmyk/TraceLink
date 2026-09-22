@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
+from app.models.enhancement import ImageSourceType
 from app.models.face_detection import FaceDetectionStatus
 
 
@@ -35,6 +36,12 @@ class FaceDetectionRunResponse(BaseModel):
     detector_version: str
     threshold: float
     source_derived_sha: str
+    # Phase 7 source provenance: which artifact was consumed.
+    source_type: ImageSourceType
+    source_sha256: str
+    enhancement_run_id: int | None = None
+    source_width: int
+    source_height: int
     face_count: int
     error: str | None = None
     started_at: datetime

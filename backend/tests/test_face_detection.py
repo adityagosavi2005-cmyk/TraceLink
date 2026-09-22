@@ -24,6 +24,7 @@ from PIL import Image
 
 from app.core.config import settings
 from app.models.case_photo import CasePhoto, PhotoStatus  # noqa: F401
+from app.models.enhancement import ImageSourceType  # noqa: F401
 from app.models.face_detection import (  # noqa: F401
     FaceDetection,
     FaceDetectionRun,
@@ -441,6 +442,10 @@ def test_active_processing_run_conflicts(
                 source_derived_sha=row.derived_sha256,
                 source_derived_width=row.derived_width,
                 source_derived_height=row.derived_height,
+                source_type=ImageSourceType.DERIVED,
+                source_sha256=row.derived_sha256,
+                source_width=row.derived_width,
+                source_height=row.derived_height,
             )
         )
         session.commit()

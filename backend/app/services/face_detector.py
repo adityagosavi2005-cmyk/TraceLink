@@ -23,7 +23,7 @@ class DetectorError(Exception):
 
 @dataclass(frozen=True)
 class DetectedFace:
-    """One face hypothesis in derived-image pixel coordinates."""
+    """One face hypothesis in source-image pixel coordinates."""
 
     x_min: int
     y_min: int

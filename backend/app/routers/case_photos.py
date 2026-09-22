@@ -249,13 +249,27 @@ def delete_case_photo(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Photo not found",
         )
-    storage.delete_prefix(storage.photo_prefix(case.id, photo.id))
-    storage.delete_prefix(
-        storage.derived_photo_prefix(case.id, photo.id)
-    )
+    # Storage first (originals + derived + enhanced scopes), so a
+    # storage failure aborts before any row is touched.
+    try:
+        storage.delete_prefix(storage.photo_prefix(case.id, photo.id))
+        storage.delete_prefix(
+            storage.derived_photo_prefix(case.id, photo.id)
+        )
+        storage.delete_prefix(
+            storage.enhanced_photo_prefix(case.id, photo.id)
+        )
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Photo storage is unavailable; nothing was deleted",
+        )
     from app.services import face_detection_service
+    from app.services import enhancement_service
 
     face_detection_service.delete_runs_for_photo(db, "case", photo.id)
+    enhancement_service.delete_runs_for_photo(db, "case", photo.id)
     db.delete(photo)
     db.commit()
     return {"message": "Photo deleted successfully"}

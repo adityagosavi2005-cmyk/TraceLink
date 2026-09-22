@@ -122,10 +122,16 @@ def _run_result(db: Session, kind: str, photo, run) -> (
 def detect_case_photo_faces(
     case_id: int,
     photo_id: int,
+    enhancement_run_id: int | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Detect faces, reusing the current valid result when present."""
+    """Detect faces, reusing the current valid result when present.
+
+    enhancement_run_id selects one COMPLETE enhancement output
+    explicitly (never the latest); omitted means the normal
+    Phase 3 derived image.
+    """
     case = _get_case_or_404(db, case_id)
     if not can_trigger_face_detection(current_user, case, db):
         raise HTTPException(
@@ -133,7 +139,9 @@ def detect_case_photo_faces(
             detail="You do not have permission to run face detection",
         )
     photo = _get_case_photo_or_404(db, case.id, photo_id)
-    run = face_detection_service.detect_faces(db, "case", photo)
+    run = face_detection_service.detect_faces(
+        db, "case", photo, enhancement_run_id=enhancement_run_id
+    )
     return _run_result(db, "case", photo, run)
 
 
@@ -143,6 +151,7 @@ def detect_case_photo_faces(
 def redetect_case_photo_faces(
     case_id: int,
     photo_id: int,
+    enhancement_run_id: int | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -154,7 +163,9 @@ def redetect_case_photo_faces(
             detail="You do not have permission to run face detection",
         )
     photo = _get_case_photo_or_404(db, case.id, photo_id)
-    run = face_detection_service.redetect_faces(db, "case", photo)
+    run = face_detection_service.redetect_faces(
+        db, "case", photo, enhancement_run_id=enhancement_run_id
+    )
     return _run_result(db, "case", photo, run)
 
 
@@ -182,10 +193,16 @@ def detect_sighting_photo_faces(
     case_id: int,
     sighting_id: int,
     photo_id: int,
+    enhancement_run_id: int | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Detect faces, reusing the current valid result when present."""
+    """Detect faces, reusing the current valid result when present.
+
+    enhancement_run_id selects one COMPLETE enhancement output
+    explicitly (never the latest); omitted means the normal
+    Phase 3 derived image.
+    """
     case = _get_case_or_404(db, case_id)
     sighting = _get_sighting_or_404(db, case.id, sighting_id)
     if not _can_trigger_sighting_detection(
@@ -198,7 +215,9 @@ def detect_sighting_photo_faces(
     photo = _get_sighting_photo_or_404(
         db, case.id, sighting.id, photo_id
     )
-    run = face_detection_service.detect_faces(db, "sighting", photo)
+    run = face_detection_service.detect_faces(
+        db, "sighting", photo, enhancement_run_id=enhancement_run_id
+    )
     return _run_result(db, "sighting", photo, run)
 
 
@@ -209,6 +228,7 @@ def redetect_sighting_photo_faces(
     case_id: int,
     sighting_id: int,
     photo_id: int,
+    enhancement_run_id: int | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -225,7 +245,9 @@ def redetect_sighting_photo_faces(
     photo = _get_sighting_photo_or_404(
         db, case.id, sighting.id, photo_id
     )
-    run = face_detection_service.redetect_faces(db, "sighting", photo)
+    run = face_detection_service.redetect_faces(
+        db, "sighting", photo, enhancement_run_id=enhancement_run_id
+    )
     return _run_result(db, "sighting", photo, run)
 
 

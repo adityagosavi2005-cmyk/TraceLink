@@ -94,11 +94,16 @@ def test_migrated_schema_column_is_vector_128(pg_connection):
         "AND attname = 'embedding'"
     ).fetchone()[0]
     assert coltype == "vector(128)", coltype
+    # Phase 7 extends the representation identity with the consumed
+    # source image, so the migrated schema carries
+    # uq_face_embeddings_source_identity (normal and enhanced
+    # embeddings of the same face coexist).
     constraint = pg_connection.execute(
         "SELECT 1 FROM pg_constraint "
         "WHERE conrelid = 'face_embeddings'::regclass "
-        "AND conname = 'uq_face_embeddings_identity'"
+        "AND conname = 'uq_face_embeddings_source_identity'"
     ).fetchone()
     assert constraint is not None, (
-        "uq_face_embeddings_identity is missing on face_embeddings"
+        "uq_face_embeddings_source_identity is missing on "
+        "face_embeddings"
     )

@@ -18,6 +18,7 @@ from PIL import Image
 
 from app.core.config import settings
 from app.models.case_photo import CasePhoto  # noqa: F401
+from app.models.enhancement import ImageSourceType  # noqa: F401
 from app.models.face_detection import (  # noqa: F401
     FaceDetection,
     FaceDetectionRun,
@@ -374,10 +375,15 @@ def test_no_raw_embeddings_exposed(client, db, s3mock, fake_factory):
     assert resp.status_code == 200, resp.text
     assert "embedding" not in resp.text
     for result in resp.json()["results"]:
+        # Phase 7 adds source provenance alongside the similarity
+        # fields (no raw embedding vector is exposed).
         assert set(result) == {
             "face_id", "photo_id", "photo_type",
             "sighting_id", "case_id", "similarity",
+            "source_type", "enhancement_run_id",
         }
+        assert result["source_type"] == "DERIVED"
+        assert result["enhancement_run_id"] is None
 
 
 # ---- Threshold + Top-K ----
@@ -559,6 +565,8 @@ def test_incompatible_representation_excluded(
         stale = FaceEmbedding(
             face_detection_id=face.id,
             source_derived_sha256=photo.derived_sha256,
+            source_type=ImageSourceType.DERIVED,
+            source_sha256=photo.derived_sha256,
             representation_name="sface",
             representation_version="2099future",
             model_name="sface",

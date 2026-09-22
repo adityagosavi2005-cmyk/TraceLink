@@ -319,3 +319,113 @@
   font-size: 0.95rem;
   margin-top: 0.5rem;
 }
+
+/* AI workflow (faces, enhancement, similarity) — shared by the case
+   and sighting photo workflows. Reuses global tokens only. */
+.ai-note {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0.5rem 0;
+}
+
+.ai-face-figure {
+  position: relative;
+  margin: 0.5rem 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background-color: var(--bg-secondary);
+}
+
+.ai-face-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.ai-face-noimage {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.ai-face-box {
+  position: absolute;
+  border: 2px solid var(--accent);
+  border-radius: 2px;
+  background-color: rgba(91, 141, 239, 0.12);
+}
+
+.ai-face-row,
+.ai-run-row,
+.ai-candidate-row {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.ai-face-row,
+.ai-run-main,
+.ai-candidate-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ai-face-id,
+.ai-run-id {
+  font-weight: 600;
+}
+
+.ai-face-confidence,
+.ai-face-boxdims,
+.ai-face-meta,
+.ai-run-dims,
+.ai-candidate-review {
+  color: var(--text-secondary);
+}
+
+.ai-run-error {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--error);
+  word-break: break-word;
+}
+
+.ai-run-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ai-selected-run {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.ai-enhanced-result {
+  margin-top: 0.5rem;
+}
+
+.ai-candidate-score {
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.ai-candidate-context {
+  color: var(--text-primary);
+}
+
+.ai-candidate-sub {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  flex-wrap: wrap;
+}

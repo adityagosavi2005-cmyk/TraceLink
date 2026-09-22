@@ -46,7 +46,7 @@ Case / Sighting
 | Auth     | JWT, Argon2                                           |
 | Storage  | boto3, S3-compatible object storage (MinIO locally)   |
 | Frontend | React, Vite, React Router, Axios, React Context       |
-| Vision   | Pillow, OpenCV, YuNet (detection), SFace (representation) |
+| Vision   | Pillow, OpenCV, YuNet (detection), SFace (representation), Real-ESRGAN (optional enhancement) |
 
 ## Current Status
 
@@ -57,6 +57,7 @@ Case / Sighting
 - [x] Phase 4 — Face detection (YuNet)
 - [x] Phase 5 — Face representation (SFace, 128-D embeddings)
 - [x] Phase 6 — Similarity retrieval (pgvector cosine distance)
+- [x] Phase 7 — Optional AI image enhancement/restoration (Real-ESRGAN x4, ADMIN/REVIEWER only, explicit per-photo runs; originals and Phase 3 derived images are never modified)
 
 ## Design principles
 
@@ -67,7 +68,7 @@ Case / Sighting
 
 ## Future direction
 
-Not implemented yet, but on the roadmap: image enhancement and restoration for poor-quality evidence, richer visual and contextual analysis, fuller investigation workflows, and generated posters and reports.
+Image enhancement and restoration for poor-quality evidence is implemented as an optional Phase 7 path (explicit Real-ESRGAN runs; never automatic, never overwriting evidence). Still on the roadmap: richer visual and contextual analysis, fuller investigation workflows, and generated posters and reports.
 
 ## Local setup
 
@@ -92,6 +93,8 @@ See `backend/.env.example` for every setting, including storage, detector, and r
 ## Note about model files
 
 The YuNet and SFace ONNX weights are intentionally excluded from version control (`backend/app/assets/*.onnx` is gitignored). Obtain them from the OpenCV Zoo releases, place them under `backend/app/assets/`, or point the documented `*_MODEL_PATH` variables at them. See `backend/app/assets/README.md` for exact filenames and details.
+
+Phase 7 additionally needs the optional Real-ESRGAN weights (`RealESRGAN_x4plus.pth`, gitignored via `*.pth`, never in the evidence bucket) plus the torch runtime (`backend/requirements-enhancement.txt`). Without them the API still runs; enhancement attempts fail with a controlled error. See `backend/app/assets/README.md` for the verified SHA-256 and license.
 
 ## Project note
 

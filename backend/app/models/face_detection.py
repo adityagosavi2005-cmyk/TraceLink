@@ -14,6 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.enhancement import ImageSourceType
 
 
 class FaceDetectionStatus(str, enum.Enum):
@@ -104,6 +105,35 @@ class FaceDetectionRun(Base):
         Integer, nullable=False
     )
 
+    # ---- Phase 7: source-aware provenance ----
+    # Which artifact YuNet actually consumed. source_derived_sha
+    # above is kept as the Phase 3 grandparent pointer: for DERIVED
+    # runs source_sha256 equals it; for ENHANCED runs source_sha256
+    # is the enhancement output SHA and enhancement_run_id points
+    # at the selected EnhancementRun. Frame/face coordinates are in
+    # source-image pixels (derived pixels for DERIVED runs,
+    # enhanced pixels for ENHANCED runs).
+    source_type: Mapped[ImageSourceType] = mapped_column(
+        Enum(ImageSourceType),
+        default=ImageSourceType.DERIVED,
+        nullable=False,
+    )
+    source_sha256: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    enhancement_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("enhancement_runs.id", ondelete="CASCADE"),
+        nullable=True,
+        default=None,
+        index=True,
+    )
+    source_width: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )
+    source_height: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )
+
     face_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )
@@ -139,7 +169,7 @@ class FaceDetectionRun(Base):
 
 
 class FaceDetection(Base):
-    """One detected face within a run, in derived-image pixels.
+    """One detected face within a run, in source-image pixels.
 
     ONE shared table for CasePhoto and SightingPhoto faces. The
     parent-photo columns mirror the owning run; exactly one is set.

@@ -212,6 +212,9 @@ def delete_case(
             storage.delete_prefix(
                 storage.derived_photo_prefix(case.id, photo.id)
             )
+            storage.delete_prefix(
+                storage.enhanced_photo_prefix(case.id, photo.id)
+            )
         for photo in sighting_photos:
             storage.delete_prefix(
                 storage.sighting_photo_prefix(
@@ -223,6 +226,11 @@ def delete_case(
                     case.id, photo.sighting_id, photo.id
                 )
             )
+            storage.delete_prefix(
+                storage.enhanced_sighting_photo_prefix(
+                    case.id, photo.sighting_id, photo.id
+                )
+            )
     except Exception:
         db.rollback()
         raise HTTPException(
@@ -231,13 +239,18 @@ def delete_case(
         )
 
     from app.services import face_detection_service
+    from app.services import enhancement_service
 
     for photo in case_photos:
         face_detection_service.delete_runs_for_photo(
             db, "case", photo.id
         )
+        enhancement_service.delete_runs_for_photo(db, "case", photo.id)
     for photo in sighting_photos:
         face_detection_service.delete_runs_for_photo(
+            db, "sighting", photo.id
+        )
+        enhancement_service.delete_runs_for_photo(
             db, "sighting", photo.id
         )
     for photo in sighting_photos:

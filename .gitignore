@@ -37,6 +37,9 @@ frontend/build/
 Thumbs.db
 # Model weights (local only, never commit)
 backend/app/assets/*.onnx
+backend/app/assets/*.pth
+backend/app/assets/*.pt
+backend/app/assets/weights/
 
 # Muse conversation exports (local only, never commit)
 /conversation-*.txt

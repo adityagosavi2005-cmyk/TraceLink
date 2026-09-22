@@ -288,17 +288,35 @@ def delete_sighting_photo(
             detail="You do not have permission to delete photos from this sighting",
         )
     photo = _get_photo_or_404(db, case.id, sighting.id, photo_id)
-    storage.delete_prefix(
-        storage.sighting_photo_prefix(case.id, sighting.id, photo.id)
-    )
-    storage.delete_prefix(
-        storage.derived_sighting_photo_prefix(
-            case.id, sighting.id, photo.id
+    # Storage first (originals + derived + enhanced scopes), so a
+    # storage failure aborts before any row is touched.
+    try:
+        storage.delete_prefix(
+            storage.sighting_photo_prefix(
+                case.id, sighting.id, photo.id
+            )
         )
-    )
+        storage.delete_prefix(
+            storage.derived_sighting_photo_prefix(
+                case.id, sighting.id, photo.id
+            )
+        )
+        storage.delete_prefix(
+            storage.enhanced_sighting_photo_prefix(
+                case.id, sighting.id, photo.id
+            )
+        )
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Photo storage is unavailable; nothing was deleted",
+        )
     from app.services import face_detection_service
+    from app.services import enhancement_service
 
     face_detection_service.delete_runs_for_photo(db, "sighting", photo.id)
+    enhancement_service.delete_runs_for_photo(db, "sighting", photo.id)
     db.delete(photo)
     db.commit()
     return {"message": "Photo deleted successfully"}

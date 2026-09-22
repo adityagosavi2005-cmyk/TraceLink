@@ -32,6 +32,7 @@ from app.core.database import Base, get_db
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.models.case import Case
+from app.models.enhancement import EnhancementRun
 from app.models.face_detection import FaceDetection, FaceDetectionRun
 from app.models.face_embedding import FaceEmbedding
 from app.models.organization import Membership, Organization
@@ -44,7 +45,7 @@ assert Case is not None and Membership is not None
 assert Organization is not None and User is not None
 assert Sighting is not None and SightingPhoto is not None
 assert FaceDetection is not None and FaceDetectionRun is not None
-assert FaceEmbedding is not None
+assert FaceEmbedding is not None and EnhancementRun is not None
 
 TEST_DB_PATH = os.path.join(BACKEND_DIR, "test_phase0.db")
 

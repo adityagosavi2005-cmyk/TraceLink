@@ -104,13 +104,25 @@ export const photoService = {
     return response.data;
   },
 
-  detectFaces: async (caseId, photoId) => {
-    const response = await api.post(`/cases/${caseId}/photos/${photoId}/faces/detect`);
+  detectFaces: async (caseId, photoId, enhancementRunId = null) => {
+    const query =
+      enhancementRunId !== null && enhancementRunId !== undefined
+        ? `?enhancement_run_id=${encodeURIComponent(enhancementRunId)}`
+        : '';
+    const response = await api.post(
+      `/cases/${caseId}/photos/${photoId}/faces/detect${query}`
+    );
     return response.data;
   },
 
-  redetectFaces: async (caseId, photoId) => {
-    const response = await api.post(`/cases/${caseId}/photos/${photoId}/faces/redetect`);
+  redetectFaces: async (caseId, photoId, enhancementRunId = null) => {
+    const query =
+      enhancementRunId !== null && enhancementRunId !== undefined
+        ? `?enhancement_run_id=${encodeURIComponent(enhancementRunId)}`
+        : '';
+    const response = await api.post(
+      `/cases/${caseId}/photos/${photoId}/faces/redetect${query}`
+    );
     return response.data;
   },
 
@@ -181,16 +193,34 @@ export const sightingService = {
     return response.data;
   },
 
-  detectSightingFaces: async (caseId, sightingId, photoId) => {
+  detectSightingFaces: async (
+    caseId,
+    sightingId,
+    photoId,
+    enhancementRunId = null
+  ) => {
+    const query =
+      enhancementRunId !== null && enhancementRunId !== undefined
+        ? `?enhancement_run_id=${encodeURIComponent(enhancementRunId)}`
+        : '';
     const response = await api.post(
-      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces/detect`
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces/detect${query}`
     );
     return response.data;
   },
 
-  redetectSightingFaces: async (caseId, sightingId, photoId) => {
+  redetectSightingFaces: async (
+    caseId,
+    sightingId,
+    photoId,
+    enhancementRunId = null
+  ) => {
+    const query =
+      enhancementRunId !== null && enhancementRunId !== undefined
+        ? `?enhancement_run_id=${encodeURIComponent(enhancementRunId)}`
+        : '';
     const response = await api.post(
-      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces/redetect`
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces/redetect${query}`
     );
     return response.data;
   },
@@ -226,6 +256,101 @@ export const caseService = {
 
   deleteCase: async (id) => {
     const response = await api.delete(`/cases/${id}`);
+    return response.data;
+  },
+};
+
+export const enhancementService = {
+  triggerCaseEnhancement: async (caseId, photoId) => {
+    const response = await api.post(
+      `/cases/${caseId}/photos/${photoId}/enhancements`
+    );
+    return response.data;
+  },
+
+  listCaseEnhancements: async (caseId, photoId) => {
+    const response = await api.get(
+      `/cases/${caseId}/photos/${photoId}/enhancements`
+    );
+    return response.data;
+  },
+
+  getCaseEnhancement: async (caseId, photoId, runId) => {
+    const response = await api.get(
+      `/cases/${caseId}/photos/${photoId}/enhancements/${runId}`
+    );
+    return response.data;
+  },
+
+  retryCaseEnhancement: async (caseId, photoId, runId) => {
+    const response = await api.post(
+      `/cases/${caseId}/photos/${photoId}/enhancements/${runId}/retry`
+    );
+    return response.data;
+  },
+
+  triggerSightingEnhancement: async (caseId, sightingId, photoId) => {
+    const response = await api.post(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/enhancements`
+    );
+    return response.data;
+  },
+
+  listSightingEnhancements: async (caseId, sightingId, photoId) => {
+    const response = await api.get(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/enhancements`
+    );
+    return response.data;
+  },
+
+  getSightingEnhancement: async (caseId, sightingId, photoId, runId) => {
+    const response = await api.get(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/enhancements/${runId}`
+    );
+    return response.data;
+  },
+
+  retrySightingEnhancement: async (caseId, sightingId, photoId, runId) => {
+    const response = await api.post(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/enhancements/${runId}/retry`
+    );
+    return response.data;
+  },
+};
+
+const similarityBody = (options = {}) => {
+  // Server-side defaults apply when a field is omitted; only send
+  // explicitly chosen values so backend limits always govern.
+  const body = {};
+  if (options.topK !== undefined && options.topK !== null) {
+    body.top_k = options.topK;
+  }
+  if (options.threshold !== undefined && options.threshold !== null) {
+    body.threshold = options.threshold;
+  }
+  return body;
+};
+
+export const similarityService = {
+  searchCaseFaceSimilar: async (caseId, photoId, faceId, options = {}) => {
+    const response = await api.post(
+      `/cases/${caseId}/photos/${photoId}/faces/${faceId}/similar`,
+      similarityBody(options)
+    );
+    return response.data;
+  },
+
+  searchSightingFaceSimilar: async (
+    caseId,
+    sightingId,
+    photoId,
+    faceId,
+    options = {}
+  ) => {
+    const response = await api.post(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces/${faceId}/similar`,
+      similarityBody(options)
+    );
     return response.data;
   },
 };

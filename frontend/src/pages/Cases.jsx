@@ -5,6 +5,7 @@ import { caseService, photoService, sightingService } from '../services/api';
 import { PageHeader, SectionHeader, PhotoCard } from '../components/Workspace';
 import { CaseStatusBadge } from '../components/StatusBadge';
 import { Modal } from '../components/Modal';
+import { PhotoAIModal } from '../components/PhotoAIModal';
 import { LoadingState, EmptyState, ErrorState } from '../components/StateBlocks';
 import './Cases.css';
 
@@ -66,6 +67,7 @@ export const Cases = () => {
   const [deletingPhotoId, setDeletingPhotoId] = useState(null);
   const [retryingPhotoId, setRetryingPhotoId] = useState(null);
   const [detectingFaceId, setDetectingFaceId] = useState(null);
+  const [aiPhotoId, setAiPhotoId] = useState(null);
 
   // Phase 2 sightings state (report list inside the case detail view)
   const [caseSightings, setCaseSightings] = useState([]);
@@ -233,6 +235,7 @@ export const Cases = () => {
 
   const handleViewDetails = async (caseId) => {
     setShowDetailModal(true);
+    setAiPhotoId(null);
     setIsEditing(false);
     setEditError(null);
     setEditSuccess(null);
@@ -505,6 +508,16 @@ export const Cases = () => {
   const canDetectFaces = user && detailCase && (
     user.role === 'ADMIN' || user.role === 'REVIEWER'
   );
+
+  // Locked Phase 7 permission: ONLY admin and reviewer may trigger
+  // enhancement. Other roles can still view runs and results.
+  const canEnhance = user && detailCase && (
+    user.role === 'ADMIN' || user.role === 'REVIEWER'
+  );
+
+  const aiPhoto = aiPhotoId
+    ? photos.find((item) => item.id === aiPhotoId) || null
+    : null;
 
   return (
     <div className="cases-page-container">
@@ -966,6 +979,7 @@ export const Cases = () => {
                               onRetryProcessing={handlePhotoRetry}
                               retrying={retryingPhotoId === photo.id}
                               showRetry={canModifyDetail && (photo.processing_status === 'FAILED' || photo.processing_status === 'UPLOADED')}
+                              onOpenAI={(id) => setAiPhotoId(id)}
                             />
                           ))}
                         </div>
@@ -1078,12 +1092,25 @@ export const Cases = () => {
                 )
               )}
               {!isEditing && (
-                <button type="button" className="btn btn-secondary" onClick={() => setShowDetailModal(false)}>
+                <button type="button" className="btn btn-secondary" onClick={() => { setShowDetailModal(false); setAiPhotoId(null); }}>
                   Close
                 </button>
               )}
             </div>
         </Modal>
+      )}
+
+      {/* AI WORKFLOW MODAL */}
+      {showDetailModal && aiPhoto && detailCase && (
+        <PhotoAIModal
+          photo={aiPhoto}
+          photoKind="case"
+          caseId={detailCase.id}
+          sightingId={null}
+          canEnhance={canEnhance}
+          onClose={() => setAiPhotoId(null)}
+          onPhotosChanged={() => fetchPhotos(detailCase.id)}
+        />
       )}
 
       {/* DELETE CONFIRMATION MODAL */}

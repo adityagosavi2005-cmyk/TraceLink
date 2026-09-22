@@ -171,6 +171,21 @@ def can_trigger_face_detection(user: User, case, db: Session) -> bool:
     return user.role in (UserRole.ADMIN, UserRole.REVIEWER)
 
 
+def can_trigger_enhancement(user: User, case, db: Session) -> bool:
+    """Narrow AI-enhancement permission for Phase 7.
+
+    ONLY ADMIN and REVIEWER may trigger enhancement. Case-edit
+    permission deliberately does NOT imply enhancement permission:
+    case owners and organization case editors (INVESTIGATOR /
+    ORG_ADMIN) are denied, exactly like face detection. REVIEWERs
+    gain no general case/photo / sighting edit or delete rights;
+    every other router keeps using can_edit_case / can_view_case
+    unchanged.
+    """
+
+    return user.role in (UserRole.ADMIN, UserRole.REVIEWER)
+
+
 def can_search_similarity(user: User, db: Session) -> bool:
     """Phase 6 similarity-retrieval permission.
 
