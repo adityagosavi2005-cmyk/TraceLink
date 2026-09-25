@@ -46,6 +46,19 @@ export const PhotoStatusBadge = ({ status }) => (
   </span>
 );
 
+export const RestorationStatusBadge = ({ status }) => {
+  if (status === 'COMPLETE') {
+    return <span className="badge badge-success">Restoration complete</span>;
+  }
+  if (status === 'FAILED') {
+    return <span className="badge badge-admin">Restoration failed</span>;
+  }
+  if (status === 'PROCESSING') {
+    return <span className="badge badge-reviewer">Restoring…</span>;
+  }
+  return <span className="badge badge-reporter">{status || 'Unknown'}</span>;
+};
+
 export const EnhancementStatusBadge = ({ status }) => {
   if (status === 'COMPLETE') {
     return <span className="badge badge-success">Enhancement complete</span>;

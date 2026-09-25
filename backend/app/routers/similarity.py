@@ -154,6 +154,7 @@ def _respond(
         top_k=body.top_k,
         threshold=body.threshold,
         is_admin=user.role == UserRole.ADMIN,
+        restoration_run_id=body.restoration_run_id,
     )
     return SimilarityResponse(
         query_face_id=face.id,

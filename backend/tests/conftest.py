@@ -46,6 +46,12 @@ assert Organization is not None and User is not None
 assert Sighting is not None and SightingPhoto is not None
 assert FaceDetection is not None and FaceDetectionRun is not None
 assert FaceEmbedding is not None and EnhancementRun is not None
+from app.models.face_restoration import (  # noqa: F401
+    FaceRestorationRun,
+    FaceRestorationStatus,
+)
+
+assert FaceRestorationRun is not None
 
 TEST_DB_PATH = os.path.join(BACKEND_DIR, "test_phase0.db")
 

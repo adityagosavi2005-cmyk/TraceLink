@@ -7,7 +7,9 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Index,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,6 +38,11 @@ class FaceEmbedding(Base):
         # Phase 7 extends the identity with the source so the same
         # face can hold one normal (DERIVED) embedding plus one
         # embedding per enhancement output without collapsing.
+        # Phase 8 adds a partial unique index (restored rows only)
+        # over the same identity plus face_restoration_run_id, so
+        # restored embeddings cannot duplicate per restoration run
+        # while normal (NULL) rows keep exactly the old behavior
+        # (PostgreSQL treats NULLs as distinct in plain UNIQUE).
         UniqueConstraint(
             "face_detection_id",
             "representation_name",
@@ -45,6 +52,22 @@ class FaceEmbedding(Base):
             "source_type",
             "source_sha256",
             name="uq_face_embeddings_source_identity",
+        ),
+        Index(
+            "uq_face_embeddings_restored_identity",
+            "face_detection_id",
+            "representation_name",
+            "representation_version",
+            "model_name",
+            "model_version",
+            "face_restoration_run_id",
+            unique=True,
+            postgresql_where=text(
+                "face_restoration_run_id IS NOT NULL"
+            ),
+            sqlite_where=text(
+                "face_restoration_run_id IS NOT NULL"
+            ),
         ),
     )
 
@@ -110,6 +133,23 @@ class FaceEmbedding(Base):
         nullable=False,
     )
 
+    # ---- Phase 8: restored-face provenance ----
+    # NULL for normal (whole-photo source) embeddings; set to the
+    # FaceRestorationRun whose artifact SFace consumed for restored
+    # embeddings. DERIVED/ENHANCED source semantics are unchanged.
+    face_restoration_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("face_restoration_runs.id", ondelete="CASCADE"),
+        nullable=True,
+        default=None,
+        index=True,
+    )
+
     face_detection: Mapped["FaceDetection"] = relationship(
         "FaceDetection", back_populates="embeddings"
+    )
+
+    face_restoration_run: Mapped["FaceRestorationRun | None"] = (
+        relationship(
+            "FaceRestorationRun", back_populates="embeddings"
+        )
     )

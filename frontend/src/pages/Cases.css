@@ -389,6 +389,13 @@
   color: var(--text-secondary);
 }
 
+.ai-candidate-warning {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--error);
+  word-break: break-word;
+}
+
 .ai-run-error {
   margin-top: 0.35rem;
   font-size: 0.8rem;

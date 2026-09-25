@@ -186,6 +186,20 @@ def can_trigger_enhancement(user: User, case, db: Session) -> bool:
     return user.role in (UserRole.ADMIN, UserRole.REVIEWER)
 
 
+def can_trigger_face_restoration(user: User, case, db: Session) -> bool:
+    """Narrow AI-restoration permission for Phase 8.
+
+    ONLY ADMIN and REVIEWER may trigger face restoration. Kept as
+    a distinct helper from can_trigger_enhancement on purpose:
+    face restoration synthesizes facial detail (a different risk
+    profile from whole-image upscaling) and its policy may need
+    to diverge later. Case-edit permission deliberately does NOT
+    imply restoration permission.
+    """
+
+    return user.role in (UserRole.ADMIN, UserRole.REVIEWER)
+
+
 def can_search_similarity(user: User, db: Session) -> bool:
     """Phase 6 similarity-retrieval permission.
 

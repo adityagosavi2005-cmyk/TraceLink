@@ -259,6 +259,9 @@ def delete_case_photo(
         storage.delete_prefix(
             storage.enhanced_photo_prefix(case.id, photo.id)
         )
+        storage.delete_prefix(
+            storage.restored_photo_prefix(case.id, photo.id)
+        )
     except Exception:
         db.rollback()
         raise HTTPException(
@@ -267,9 +270,11 @@ def delete_case_photo(
         )
     from app.services import face_detection_service
     from app.services import enhancement_service
+    from app.services import face_restoration_service
 
     face_detection_service.delete_runs_for_photo(db, "case", photo.id)
     enhancement_service.delete_runs_for_photo(db, "case", photo.id)
+    face_restoration_service.delete_runs_for_photo(db, "case", photo.id)
     db.delete(photo)
     db.commit()
     return {"message": "Photo deleted successfully"}

@@ -328,7 +328,82 @@ const similarityBody = (options = {}) => {
   if (options.threshold !== undefined && options.threshold !== null) {
     body.threshold = options.threshold;
   }
+  if (options.restorationRunId !== undefined && options.restorationRunId !== null) {
+    body.restoration_run_id = options.restorationRunId;
+  }
   return body;
+};
+
+export const restorationService = {
+  triggerCaseRestoration: async (caseId, photoId, faceId) => {
+    const response = await api.post(
+      `/cases/${caseId}/photos/${photoId}/faces/${faceId}/restorations`
+    );
+    return response.data;
+  },
+
+  listCaseRestorations: async (caseId, photoId, faceId) => {
+    const response = await api.get(
+      `/cases/${caseId}/photos/${photoId}/faces/${faceId}/restorations`
+    );
+    return response.data;
+  },
+
+  getCaseRestoration: async (caseId, photoId, faceId, runId) => {
+    const response = await api.get(
+      `/cases/${caseId}/photos/${photoId}/faces/${faceId}/restorations/${runId}`
+    );
+    return response.data;
+  },
+
+  retryCaseRestoration: async (caseId, photoId, faceId, runId) => {
+    const response = await api.post(
+      `/cases/${caseId}/photos/${photoId}/faces/${faceId}/restorations/${runId}/retry`
+    );
+    return response.data;
+  },
+
+  embedCaseRestoredFace: async (caseId, photoId, faceId, runId) => {
+    const response = await api.post(
+      `/cases/${caseId}/photos/${photoId}/faces/${faceId}/restorations/${runId}/embedding`
+    );
+    return response.data;
+  },
+
+  triggerSightingRestoration: async (caseId, sightingId, photoId, faceId) => {
+    const response = await api.post(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces/${faceId}/restorations`
+    );
+    return response.data;
+  },
+
+  listSightingRestorations: async (caseId, sightingId, photoId, faceId) => {
+    const response = await api.get(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces/${faceId}/restorations`
+    );
+    return response.data;
+  },
+
+  getSightingRestoration: async (caseId, sightingId, photoId, faceId, runId) => {
+    const response = await api.get(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces/${faceId}/restorations/${runId}`
+    );
+    return response.data;
+  },
+
+  retrySightingRestoration: async (caseId, sightingId, photoId, faceId, runId) => {
+    const response = await api.post(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces/${faceId}/restorations/${runId}/retry`
+    );
+    return response.data;
+  },
+
+  embedSightingRestoredFace: async (caseId, sightingId, photoId, faceId, runId) => {
+    const response = await api.post(
+      `/cases/${caseId}/sightings/${sightingId}/photos/${photoId}/faces/${faceId}/restorations/${runId}/embedding`
+    );
+    return response.data;
+  },
 };
 
 export const similarityService = {

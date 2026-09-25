@@ -27,6 +27,7 @@ from app.core.config import settings
 ORIGINALS_PREFIX = "originals"
 DERIVED_PREFIX = "derived"
 ENHANCED_PREFIX = "enhanced"
+RESTORED_PREFIX = "restored-faces"
 SIGHTINGS_SEGMENT = "sightings"
 
 
@@ -304,6 +305,99 @@ def enhanced_sighting_photo_prefix(
     """Phase 7 artifact scope for one sighting photo."""
     return "%s/%s/%d/%d/%d/" % (
         ENHANCED_PREFIX,
+        SIGHTINGS_SEGMENT,
+        case_id,
+        sighting_id,
+        photo_id,
+    )
+
+
+def build_restored_face_key(
+    case_id: int, photo_id: int, face_id: int, output_sha: str
+) -> str:
+    """Deterministic restored-face key for one case photo face.
+
+    Layout: restored-faces/{case_id}/{photo_id}/{face_id}/
+    {output_sha}.jpg (content-addressed; the run id is not in
+    the key because one run maps to exactly one artifact).
+    """
+    return "%s/%d/%d/%d/%s.jpg" % (
+        RESTORED_PREFIX,
+        case_id,
+        photo_id,
+        face_id,
+        output_sha,
+    )
+
+
+def build_sighting_restored_face_key(
+    case_id: int,
+    sighting_id: int,
+    photo_id: int,
+    face_id: int,
+    output_sha: str,
+) -> str:
+    """Deterministic restored-face key for one sighting photo face.
+
+    Layout: restored-faces/sightings/{case_id}/{sighting_id}/
+    {photo_id}/{face_id}/{output_sha}.jpg
+    """
+    return "%s/%s/%d/%d/%d/%d/%s.jpg" % (
+        RESTORED_PREFIX,
+        SIGHTINGS_SEGMENT,
+        case_id,
+        sighting_id,
+        photo_id,
+        face_id,
+        output_sha,
+    )
+
+
+def put_restored_face(key: str, data: bytes, content_type: str) -> None:
+    """Store one Phase 8 restored-face artifact (restored scope).
+
+    Separate from put_original/put_derived/put_enhanced so face
+    restoration output can never address the immutable
+    originals/ evidence scope, the Phase 3 derived scope, or the
+    Phase 7 enhanced scope. Callers must build the key with
+    build_restored_face_key / build_sighting_restored_face_key.
+    """
+    if not key.startswith(RESTORED_PREFIX + "/"):
+        raise ValueError("Restored faces must live under restored-faces/")
+    _client().put_object(
+        Bucket=settings.S3_BUCKET,
+        Key=key,
+        Body=data,
+        ContentType=content_type,
+    )
+
+
+def get_restored_face_bytes(key: str) -> bytes:
+    """Read Phase 8 restored-face bytes back for AI processing.
+
+    Guards the restored-faces/ scope the same way put_restored_face
+    guards writes.
+    """
+    if not key.startswith(RESTORED_PREFIX + "/"):
+        raise ValueError("Restored faces must live under restored-faces/")
+    response = _client().get_object(
+        Bucket=settings.S3_BUCKET,
+        Key=key,
+    )
+    return response["Body"].read()
+
+
+def restored_photo_prefix(case_id: int, photo_id: int) -> str:
+    """Phase 8 artifact scope for one case photo (all its faces)."""
+    return "%s/%d/%d/" % (RESTORED_PREFIX, case_id, photo_id)
+
+
+def restored_sighting_photo_prefix(
+    case_id: int, sighting_id: int, photo_id: int
+) -> str:
+    """Phase 8 artifact scope for one sighting photo (all faces)."""
+    return "%s/%s/%d/%d/%d/" % (
+        RESTORED_PREFIX,
         SIGHTINGS_SEGMENT,
         case_id,
         sighting_id,

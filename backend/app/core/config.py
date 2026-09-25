@@ -59,6 +59,26 @@ class Settings(BaseSettings):
     # 1024 px, so legitimate inputs stay far below this limit.
     ENHANCEMENT_MAX_INPUT_PIXELS: int = 2 * 1024 * 1024
 
+    # ---- Phase 8: face restoration (GFPGAN) ----
+    # Active restorer identity recorded on every restoration run.
+    # The adapter loads weights lazily from GFPGAN_MODEL_PATH
+    # (never inside the evidence bucket); None falls back to
+    # backend/app/assets/. A missing file/dependency fails
+    # restoration with a controlled error, never at import time.
+    RESTORER_NAME: str = "gfpgan"
+    RESTORER_VERSION: str = "v1"
+    GFPGAN_MODEL_NAME: str = "GFPGANv1.3"
+    GFPGAN_MODEL_VERSION: str = "v1.3"
+    GFPGAN_MODEL_PATH: str | None = None
+    # Inference device for restoration ("cpu" default). Passed to
+    # the GFPGAN runtime when it supports device selection.
+    RESTORER_DEVICE: str = "cpu"
+    # Resource boundary: prepared face crops larger than this (in
+    # pixels) are rejected before inference. Preparation always
+    # emits GFPGAN_INPUT_SIZE squares, so legitimate inputs stay
+    # far below this limit.
+    RESTORATION_MAX_FACE_PIXELS: int = 1024 * 1024
+
     # Backward-compatible alias: routers/tests still read PHOTO_MAX_BYTES.
     @property
     def PHOTO_MAX_BYTES(self) -> int:

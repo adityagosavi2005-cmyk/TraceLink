@@ -39,6 +39,7 @@ from app.models.face_detection import (
     FaceDetectionStatus,
 )
 from app.models.face_embedding import FaceEmbedding
+from app.models.face_restoration import FaceRestorationRun
 from app.models.sighting_photo import SightingPhoto
 from app.services import face_detection_service, image_source
 from app.services.face_representation import REPRESENTATION_DIMENSION
@@ -152,6 +153,50 @@ def get_query_embedding(
         raise _conflict(
             "Query face representation is stale for the current "
             "derived image"
+        )
+    return row
+
+
+def get_restoration_query_embedding(
+    db: Session, face: FaceDetection, photo, restoration_run_id: int
+) -> FaceEmbedding:
+    """Current valid restored embedding for the query face, or raise.
+
+    Mirrors get_query_embedding for the explicit-restoration path:
+    the restoration chain must fully verify and a restored SFace
+    embedding for that run must exist (generated via the
+    restoration embedding endpoint first).
+    """
+    from app.services import face_restoration_service
+    from app.services.sface_representation import SFaceRepresentation
+
+    representation = SFaceRepresentation()
+    identity = (
+        representation.representation_name,
+        representation.representation_version,
+        representation.model_name,
+        representation.model_version,
+    )
+    run = db.get(FaceRestorationRun, restoration_run_id)
+    if run is None:
+        raise _conflict(
+            "Restored face not found for this query face"
+        )
+    valid = face_restoration_service.validate_restoration_candidate_by_run(
+        db, run, face, photo
+    )
+    if valid is None:
+        raise _conflict(
+            "Restored face is not current for this photo; "
+            "restore the face again"
+        )
+    row = face_restoration_service.get_restored_embedding_for_run(
+        db, face, photo, identity, run
+    )
+    if row is None:
+        raise _conflict(
+            "Restored face has no face representation yet; "
+            "generate its embedding first"
         )
     return row
 
@@ -273,17 +318,31 @@ def collect_candidates(
             except image_source.SourceResolutionError:
                 source_cache[run_id] = None
         source = source_cache[run_id]
-        if source is None:
+        restoration_run = None
+        if embedding.face_restoration_run_id is not None:
+            from app.services import face_restoration_service
+
+            restoration_run = (
+                face_restoration_service.validate_restoration_candidate(
+                    db, embedding, face, photo
+                )
+            )
+            if restoration_run is None:
+                continue
+        if source is None and restoration_run is None:
             continue
         if (
             embedding.source_type != run.source_type
-            or embedding.source_sha256 != source.source_sha256
+            or (
+                embedding.source_sha256 != source.source_sha256
+                and embedding.face_restoration_run_id is None
+            )
         ):
             continue
         if embedding.source_derived_sha256 != photo.derived_sha256:
             continue
         if run.source_type == ImageSourceType.DERIVED:
-            if not _run_is_current_for_photo(db, opposite, photo, run):
+            if restoration_run is None and not _run_is_current_for_photo(db, opposite, photo, run):
                 continue
         elif run.enhancement_run_id is None:
             continue
@@ -304,9 +363,17 @@ def collect_candidates(
                 "face": face,
                 "run": run,
                 "photo": photo,
+                "restoration_run": restoration_run,
             }
         )
     return candidates
+
+
+SYNTHESIZED_DETAIL_WARNING = (
+    "Restored-face match: GFPGAN may synthesize facial detail. "
+    "This is an investigation-support signal requiring human review, "
+    "not identity evidence."
+)
 
 
 def _build_item(candidate: dict, photo_type: str, similarity: float) -> dict:
@@ -326,6 +393,15 @@ def _build_item(candidate: dict, photo_type: str, similarity: float) -> dict:
         if isinstance(run.source_type, ImageSourceType)
         else run.source_type,
         "enhancement_run_id": run.enhancement_run_id,
+        "face_restoration_run_id": candidate["restoration_run"].id
+        if candidate.get("restoration_run") is not None
+        else None,
+        "is_restored": candidate.get("restoration_run") is not None,
+        "synthesized_detail_warning": (
+            SYNTHESIZED_DETAIL_WARNING
+            if candidate.get("restoration_run") is not None
+            else None
+        ),
     }
 
 
@@ -399,6 +475,7 @@ def search_similar_faces(
     top_k: int = DEFAULT_TOP_K,
     threshold: float = DEFAULT_THRESHOLD,
     is_admin: bool = False,
+    restoration_run_id: int | None = None,
 ) -> tuple[FaceEmbedding, list[dict]]:
     """Run retrieval for one query face.
 
@@ -416,7 +493,12 @@ def search_similar_faces(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="threshold must be between -1.0 and 1.0",
         )
-    query_row = get_query_embedding(db, query_face, query_photo)
+    if restoration_run_id is not None:
+        query_row = get_restoration_query_embedding(
+            db, query_face, query_photo, restoration_run_id
+        )
+    else:
+        query_row = get_query_embedding(db, query_face, query_photo)
     query_vector = list(query_row.embedding)
     candidates = collect_candidates(
         db, kind, query_face.id, scope_org_ids, user_id, is_admin

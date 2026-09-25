@@ -381,9 +381,14 @@ def test_no_raw_embeddings_exposed(client, db, s3mock, fake_factory):
             "face_id", "photo_id", "photo_type",
             "sighting_id", "case_id", "similarity",
             "source_type", "enhancement_run_id",
+            "face_restoration_run_id", "is_restored",
+            "synthesized_detail_warning",
         }
         assert result["source_type"] == "DERIVED"
         assert result["enhancement_run_id"] is None
+        assert result["is_restored"] is False
+        assert result["face_restoration_run_id"] is None
+        assert result["synthesized_detail_warning"] is None
 
 
 # ---- Threshold + Top-K ----

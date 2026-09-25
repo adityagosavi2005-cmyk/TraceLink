@@ -1,0 +1,59 @@
+# TraceLink backend -- Phase 8 face-restoration runtime (optional).
+#
+# The default install (requirements.txt) runs the full API WITHOUT
+# restoration: the GFPGAN adapter loads lazily and restoration
+# attempts fail with a controlled error when this runtime is absent.
+# Follow the steps below to enable restoration on a server with the
+# GFPGANv1.3 weights (see backend/app/assets/README.md).
+#
+# VALIDATED WINDOWS RUNTIME (2026-09-24):
+# Python 3.11.15, torch 2.9.1+cpu, torchvision 0.24.1+cpu,
+# gfpgan 1.3.8, basicsr 1.4.2, facexlib 0.3.0, numpy 2.4.6,
+# OpenCV 5.0.0, Pillow 12.3.0.
+#
+# COMPATIBILITY (verified): the stock GFPGAN inference stack
+# works on the pinned torch==2.9.1+cpu /
+# torchvision==0.24.1+cpu build together with ONE local shim:
+# basicsr 1.4.2 imports ``torchvision.transforms.functional_tensor``
+# (removed from modern torchvision), which the adapter supplies via
+# backend/app/services/gfpgan_compat.py immediately before
+# ``from gfpgan import GFPGANer``. No site-packages and no BasicSR
+# sources are modified, and no Torch downgrade is required.
+# Verified end to end: GFPGANer construction + enhance() on CPU
+# (see backend/tests/test_gfpgan_real.py).
+#
+# SAFE INSTALL PROCEDURE -- follow these steps exactly, in order.
+# Do NOT add a global --index-url for the PyTorch index to this
+# file: it hides PyPI, so PyPI-only packages (gfpgan, basicsr,
+# facexlib) cannot be found. Do NOT install everything in one
+# unrestricted pip transaction: that lets pip replace the pinned
+# torch 2.9.1+cpu with the newest PyPI release (observed during
+# validation: torch 2.9.1+cpu -> torch 2.14.0). Keep torch pinned
+# at every step.
+#
+# STEP 1 -- exact CPU Torch build from the PyTorch CPU index:
+#   python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.9.1+cpu
+#
+# STEP 2 -- validated GFPGAN stack from PyPI, without dependencies
+# (--no-deps so pip cannot float torch):
+#   python -m pip install --index-url https://pypi.org/simple --no-deps gfpgan==1.3.8 basicsr==1.4.2 facexlib==0.3.0
+#
+# STEP 3 -- exact validated torchvision CPU build:
+#   python -m pip install --index-url https://download.pytorch.org/whl/cpu torchvision==0.24.1+cpu
+#
+# STEP 4 -- remaining required dependencies from PyPI:
+#   python -m pip install --index-url https://pypi.org/simple scikit-image==0.26.0 tb-nightly filterpy==1.4.5 numba==0.67.0
+#
+# GPU servers: install the matching CUDA Torch build from the
+# PyTorch index instead of STEP 1, e.g.:
+#   pip install torch==2.9.1 --index-url https://download.pytorch.org/whl/cu128
+# then set RESTORER_DEVICE=cuda (see backend/.env.example).
+#
+# Reference pins (commented out on purpose: install via STEPS 1-4
+# above, never via a single unrestricted transaction):
+# torch==2.9.1+cpu
+# torchvision==0.24.1+cpu
+# gfpgan==1.3.8
+# basicsr==1.4.2
+# facexlib==0.3.0
+# scikit-image==0.26.0

@@ -4,11 +4,13 @@ import {
   sightingService,
   enhancementService,
   similarityService,
+  restorationService,
 } from '../services/api';
 import { Modal } from './Modal';
 import { LoadingState, EmptyState, ErrorState } from './StateBlocks';
 import {
   EnhancementStatusBadge,
+  RestorationStatusBadge,
   FaceStatusBadge,
   SourceBadge,
 } from './StatusBadge';
@@ -92,6 +94,45 @@ const buildPhotoApi = (photoKind, caseId, sightingId, photoId) => {
   };
 };
 
+const buildRestorationApi = (photoKind, caseId, sightingId, photoId) => {
+  if (photoKind === 'sighting') {
+    return {
+      trigger: (faceId) =>
+        restorationService.triggerSightingRestoration(caseId, sightingId, photoId, faceId),
+      list: (faceId) =>
+        restorationService.listSightingRestorations(caseId, sightingId, photoId, faceId),
+      get: (faceId, runId) =>
+        restorationService.getSightingRestoration(caseId, sightingId, photoId, faceId, runId),
+      retry: (faceId, runId) =>
+        restorationService.retrySightingRestoration(caseId, sightingId, photoId, faceId, runId),
+      embed: (faceId, runId) =>
+        restorationService.embedSightingRestoredFace(caseId, sightingId, photoId, faceId, runId),
+      searchSimilarRestored: (faceId, runId, options) =>
+        sightingService.searchSightingFaceSimilar(caseId, sightingId, photoId, faceId, {
+          ...(options || {}),
+          restorationRunId: runId,
+        }),
+    };
+  }
+  return {
+    trigger: (faceId) =>
+      restorationService.triggerCaseRestoration(caseId, photoId, faceId),
+    list: (faceId) =>
+      restorationService.listCaseRestorations(caseId, photoId, faceId),
+    get: (faceId, runId) =>
+      restorationService.getCaseRestoration(caseId, photoId, faceId, runId),
+    retry: (faceId, runId) =>
+      restorationService.retryCaseRestoration(caseId, photoId, faceId, runId),
+    embed: (faceId, runId) =>
+      restorationService.embedCaseRestoredFace(caseId, photoId, faceId, runId),
+    searchSimilarRestored: (faceId, runId, options) =>
+      similarityService.searchCaseFaceSimilar(caseId, photoId, faceId, {
+        ...(options || {}),
+        restorationRunId: runId,
+      }),
+  };
+};
+
 const FaceFigure = ({ imageUrl, faces, alt, onImageError }) => {
   const boxes = (faces || []).filter(
     (face) => face.frame_width > 0 && face.frame_height > 0
@@ -170,6 +211,14 @@ const CandidateRow = ({ candidate }) => {
           runId={candidate.enhancement_run_id}
         />
         <span className="ai-candidate-review">Needs human review</span>
+        {candidate.is_restored && (
+          <span
+            className="ai-candidate-warning"
+            title={candidate.synthesized_detail_warning || 'GFPGAN may synthesize facial detail.'}
+          >
+            Restored face{candidate.face_restoration_run_id ? ` · Run #${candidate.face_restoration_run_id}` : ''} · synthetic detail possible
+          </span>
+        )}
       </div>
     </div>
   );
@@ -185,6 +234,7 @@ export const PhotoAIModal = ({
   onPhotosChanged,
 }) => {
   const photoApi = buildPhotoApi(photoKind, caseId, sightingId, photo.id);
+  const restorationApi = buildRestorationApi(photoKind, caseId, sightingId, photo.id);
 
   const [bannerError, setBannerError] = useState(null);
 
@@ -205,8 +255,35 @@ export const PhotoAIModal = ({
   const [enhancedDetecting, setEnhancedDetecting] = useState(false);
 
   const [searchingFaceId, setSearchingFaceId] = useState(null);
+  const [selectedFaceId, setSelectedFaceId] = useState(null);
+  const [restorations, setRestorations] = useState([]);
+  const [restorationsLoading, setRestorationsLoading] = useState(false);
+  const [restoringFaceId, setRestoringFaceId] = useState(null);
+  const [retryingRestorationId, setRetryingRestorationId] = useState(null);
+  const [selectedRestorationId, setSelectedRestorationId] = useState(null);
+  const [restorationArtifactUrl, setRestorationArtifactUrl] = useState(null);
+  const [restorationArtifactLoading, setRestorationArtifactLoading] = useState(false);
+  const [embeddingResult, setEmbeddingResult] = useState(null);
+  const [embeddingLoading, setEmbeddingLoading] = useState(false);
   const [similarity, setSimilarity] = useState(null);
   const [similarityError, setSimilarityError] = useState(null);
+
+  // Query provenance for the Similarity results section. Normal
+  // searches carry no restoredRunId; restored searches carry the
+  // explicitly selected restoration run id (set by
+  // handleFindSimilarRestored, never inferred).
+  const similarityRestoredRunId =
+    similarity &&
+    similarity.restoredRunId !== undefined &&
+    similarity.restoredRunId !== null
+      ? similarity.restoredRunId
+      : null;
+  const similarityQueryProvenance =
+    similarity && similarity.face
+      ? (similarityRestoredRunId !== null
+        ? `Query: Face #${similarity.face.ordinal} · Restored face · Run #${similarityRestoredRunId}`
+        : `Query: Face #${similarity.face.ordinal} · Normal derived face`)
+      : null;
 
   const similarityCandidates =
     similarity &&
@@ -323,6 +400,113 @@ export const PhotoAIModal = ({
       );
     } finally {
       setEnhancedDetecting(false);
+    }
+  };
+
+  const fetchRestorations = useCallback(async (faceId) => {
+    if (!faceId) {
+      setRestorations([]);
+      return;
+    }
+    setRestorationsLoading(true);
+    try {
+      const data = await restorationApi.list(faceId);
+      setRestorations(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setRestorations([]);
+      setBannerError(apiMessage(err, 'Failed to load face restoration runs.'));
+    } finally {
+      setRestorationsLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoKind, caseId, sightingId, photo.id]);
+
+  const handleSelectFaceForRestoration = (faceId) => {
+    const id = faceId ? Number(faceId) : null;
+    setSelectedFaceId(id);
+    setSelectedRestorationId(null);
+    setRestorationArtifactUrl(null);
+    setEmbeddingResult(null);
+    if (id) fetchRestorations(id);
+    else setRestorations([]);
+  };
+
+  const handleRestoreFace = async (faceId) => {
+    setRestoringFaceId(faceId);
+    setBannerError(null);
+    try {
+      await restorationApi.trigger(faceId);
+      await fetchRestorations(faceId);
+      if (onPhotosChanged) onPhotosChanged();
+    } catch (err) {
+      setBannerError(apiMessage(err, 'Failed to start face restoration.'));
+    } finally {
+      setRestoringFaceId(null);
+    }
+  };
+
+  const handleViewRestoration = async (faceId, run) => {
+    if (!run || run.status !== 'COMPLETE') return;
+    setRestorationArtifactLoading(true);
+    setBannerError(null);
+    try {
+      // Refetch the run detail every time so the presigned artifact
+      // URL is never treated as permanent.
+      const detail = await restorationApi.get(faceId, run.id);
+      setSelectedRestorationId(run.id);
+      setEmbeddingResult(null);
+      setRestorationArtifactUrl(detail.view_url || null);
+      if (!detail.view_url) {
+        setBannerError('No viewable artifact is available for this run.');
+      }
+    } catch (err) {
+      setRestorationArtifactUrl(null);
+      setBannerError(apiMessage(err, 'Failed to load the restored artifact.'));
+    } finally {
+      setRestorationArtifactLoading(false);
+    }
+  };
+
+  const handleRetryRestoration = async (faceId, runId) => {
+    setRetryingRestorationId(runId);
+    setBannerError(null);
+    try {
+      await restorationApi.retry(faceId, runId);
+      await fetchRestorations(faceId);
+      if (onPhotosChanged) onPhotosChanged();
+    } catch (err) {
+      setBannerError(apiMessage(err, 'Failed to retry face restoration.'));
+    } finally {
+      setRetryingRestorationId(null);
+    }
+  };
+
+  const handleEmbedRestored = async (faceId, run) => {
+    if (!run || run.status !== 'COMPLETE') return;
+    setEmbeddingLoading(true);
+    setBannerError(null);
+    try {
+      const result = await restorationApi.embed(faceId, run.id);
+      setEmbeddingResult(result);
+    } catch (err) {
+      setEmbeddingResult(null);
+      setBannerError(apiMessage(err, 'Restored-face embedding failed.'));
+    } finally {
+      setEmbeddingLoading(false);
+    }
+  };
+
+  const handleFindSimilarRestored = async (face, runId) => {
+    setSearchingFaceId(face.id);
+    setSimilarityError(null);
+    try {
+      const result = await restorationApi.searchSimilarRestored(face.id, runId);
+      setSimilarity({ face, result, restoredRunId: runId });
+    } catch (err) {
+      setSimilarity(null);
+      setSimilarityError(apiMessage(err, 'Similarity search failed.'));
+    } finally {
+      setSearchingFaceId(null);
     }
   };
 
@@ -573,7 +757,11 @@ export const PhotoAIModal = ({
         ) : similarityCandidates.length === 0 ? (
           <EmptyState
             title="No similar candidates found"
-            detail={`Search on Face #${similarity.face.ordinal} completed with no candidates meeting the threshold.`}
+            detail={
+              similarityRestoredRunId !== null
+                ? `Search using restored Face #${similarity.face.ordinal} · Restoration Run #${similarityRestoredRunId} completed with no candidates meeting the threshold.`
+                : `Search on Face #${similarity.face.ordinal} completed with no candidates meeting the threshold.`
+            }
           />
         ) : (
           <>
@@ -581,9 +769,199 @@ export const PhotoAIModal = ({
               Showing faces similar to Face #{similarity.face.ordinal} from
               this photo. Scores are retrieval signals, not identity proof.
             </p>
+            <p className="ai-note">{similarityQueryProvenance}</p>
+            {similarityRestoredRunId !== null && (
+              <p className="ai-note">
+                Restored-face query: GFPGAN may synthesize facial detail. Results are
+                investigation-support signals requiring human review, not identity evidence.
+              </p>
+            )}
             {similarityCandidates.map((candidate) => (
               <CandidateRow key={candidate.face_id} candidate={candidate} />
             ))}
+          </>
+        )}
+      </div>
+      <div className="evidence-section">
+        <SectionHeader
+          title="Face restoration (optional)"
+          meta="ADMIN / REVIEWER"
+        />
+        <p className="ai-note">
+          Restore one explicitly selected face with GFPGAN for
+          downstream SFace / similarity investigation. Restoration
+          consumes the Phase 3 derived image only and never modifies
+          the original evidence.
+        </p>
+        <p className="ai-note">
+          GFPGAN may synthesize facial detail. Restored-face results
+          are investigation-support signals requiring human review,
+          not identity evidence.
+        </p>
+        {normalFaces.length === 0 ? (
+          <EmptyState
+            title="No detected faces"
+            detail="Detect faces above to select one for restoration."
+          />
+        ) : (
+          <>
+            <label className="ai-note" htmlFor="restore-face-select">
+              Selected face
+            </label>
+            <select
+              id="restore-face-select"
+              value={selectedFaceId ?? ''}
+              onChange={(e) => handleSelectFaceForRestoration(e.target.value)}
+            >
+              <option value="">Select a face…</option>
+              {normalFaces.map((face) => (
+                <option key={face.id} value={face.id}>
+                  {`Face #${face.ordinal} · confidence ${Number(face.confidence).toFixed(2)}`}
+                </option>
+              ))}
+            </select>
+            {canEnhance && selectedFaceId && (
+              <button
+                type="button"
+                className="btn btn-ai btn-sm"
+                onClick={() => handleRestoreFace(selectedFaceId)}
+                disabled={restoringFaceId !== null}
+                title="Restore the selected face (creates a new run)"
+              >
+                {restoringFaceId ? 'Restoring…' : 'Restore This Face'}
+              </button>
+            )}
+            {!canEnhance && (
+              <p className="ai-note">
+                Face restoration can be triggered by ADMIN or REVIEWER users.
+              </p>
+            )}
+            {selectedFaceId && (
+              restorationsLoading ? (
+                <LoadingState label="Loading restoration runs…" />
+              ) : restorations.length === 0 ? (
+                <EmptyState
+                  title="No restoration runs yet"
+                  detail="Restore the selected face to create one."
+                />
+              ) : (
+                <div className="ai-run-list">
+                  {restorations.map((run) => (
+                    <div key={run.id} className="ai-run-row">
+                      <div className="ai-run-main">
+                        <span className="ai-run-id">Run #{run.id}</span>
+                        <RestorationStatusBadge status={run.status} />
+                        {run.status === 'COMPLETE' &&
+                          run.width > 0 &&
+                          run.height > 0 && (
+                            <span className="ai-run-dims">
+                              {run.width}×{run.height}
+                            </span>
+                          )}
+                        <span className="ai-run-dims">
+                          {run.restored_geometry_kind === 'CANONICAL'
+                            ? 'canonical geometry'
+                            : 'mapped geometry'}
+                        </span>
+                        {selectedRestorationId === run.id && (
+                          <span className="badge badge-reviewer">Selected</span>
+                        )}
+                      </div>
+                      {run.status === 'FAILED' && run.error_message && (
+                        <div className="ai-run-error">{run.error_message}</div>
+                      )}
+                      <div className="ai-run-actions">
+                        {run.status === 'COMPLETE' && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleViewRestoration(selectedFaceId, run)}
+                            disabled={restorationArtifactLoading}
+                            title="View the restored face and select this run"
+                          >
+                            {selectedRestorationId === run.id ? 'Selected' : 'Use run'}
+                          </button>
+                        )}
+                        {run.status === 'FAILED' && canEnhance && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleRetryRestoration(selectedFaceId, run.id)}
+                            disabled={retryingRestorationId === run.id}
+                            title="Retry this failed restoration (creates a new run)"
+                          >
+                            {retryingRestorationId === run.id ? '…' : '↻ Retry'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+            {selectedRestorationId && (
+              <div className="ai-selected-run">
+                <SectionHeader
+                  title={`Using restoration Run #${selectedRestorationId}`}
+                  meta="Restored face · explicit run"
+                />
+                {restorationArtifactLoading ? (
+                  <LoadingState label="Loading restored artifact…" />
+                ) : restorationArtifactUrl ? (
+                  <div className="ai-face-figure">
+                    <img
+                      src={restorationArtifactUrl}
+                      alt={`Restored face for Run #${selectedRestorationId}`}
+                      className="ai-face-image"
+                      onError={() => {
+                        setRestorationArtifactUrl(null);
+                        setBannerError(
+                          'The artifact preview expired. Select the run again to refresh it.'
+                        );
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <EmptyState
+                    title="Artifact preview unavailable"
+                    detail="The restored face could not be loaded."
+                  />
+                )}
+                {canEnhance && (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-ai btn-sm"
+                      onClick={() => {
+                        const run = restorations.find((r) => r.id === selectedRestorationId);
+                        if (run) handleEmbedRestored(selectedFaceId, run);
+                      }}
+                      disabled={embeddingLoading}
+                      title="Generate the SFace embedding for the selected restored face"
+                    >
+                      {embeddingLoading ? 'Embedding…' : 'Generate Embedding'}
+                    </button>
+                    {embeddingResult && (
+                      <p className="ai-note">
+                        {`Embedding #${embeddingResult.id} ready for Face #${selectedFaceId}. `}
+                        <button
+                          type="button"
+                          className="btn btn-ai btn-sm"
+                          onClick={() => {
+                            const face = normalFaces.find((f) => f.id === selectedFaceId);
+                            if (face) handleFindSimilarRestored(face, selectedRestorationId);
+                          }}
+                          disabled={searchingFaceId !== null}
+                          title="Search for faces similar to this restored face"
+                        >
+                          {searchingFaceId ? '…' : 'Find Similar'}
+                        </button>
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

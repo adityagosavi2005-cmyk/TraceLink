@@ -306,6 +306,11 @@ def delete_sighting_photo(
                 case.id, sighting.id, photo.id
             )
         )
+        storage.delete_prefix(
+            storage.restored_sighting_photo_prefix(
+                case.id, sighting.id, photo.id
+            )
+        )
     except Exception:
         db.rollback()
         raise HTTPException(
@@ -314,9 +319,11 @@ def delete_sighting_photo(
         )
     from app.services import face_detection_service
     from app.services import enhancement_service
+    from app.services import face_restoration_service
 
     face_detection_service.delete_runs_for_photo(db, "sighting", photo.id)
     enhancement_service.delete_runs_for_photo(db, "sighting", photo.id)
+    face_restoration_service.delete_runs_for_photo(db, "sighting", photo.id)
     db.delete(photo)
     db.commit()
     return {"message": "Photo deleted successfully"}

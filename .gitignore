@@ -43,3 +43,5 @@ backend/app/assets/weights/
 
 # Muse conversation exports (local only, never commit)
 /conversation-*.txt
+# GFPGAN auxiliary facexlib weights (local only, never commit)
+backend/gfpgan/weights/*.pth
